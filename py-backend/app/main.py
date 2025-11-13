@@ -2,12 +2,12 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from app.core.config import settings
-from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware 
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes.routes import api
 
 app = FastAPI(title = settings.APP_NAME)
-app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+app.add_middleware(ProxyHeadersMiddleware,trusted_hosts=["*"])
 
 app.add_middleware(
     CORSMiddleware,

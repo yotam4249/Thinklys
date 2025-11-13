@@ -5,7 +5,7 @@ description = ""
 authors = [
     {name = "yotam4249",email = "136727458+yotam4249@users.noreply.github.com"}
 ]
-readme = "README.md"
+readme = "../README.md"
 requires-python = ">=3.13"
 dependencies = [
     "fastapi (>=0.121.1,<0.122.0)",
@@ -22,3 +22,11 @@ dependencies = [
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+packages = [{ include = "app" }]
+
+[tool.poetry.scripts]
+dev = "app.cli:dev"
+
+[tool.poetry.extras]
