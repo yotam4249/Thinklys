@@ -8,7 +8,7 @@ export interface IMessage {
   senderId: Types.ObjectId;
   type: MessageType;
   text?: string;
-  imageUrls?: string[]; // S3 keys for images
+  imageUrls?: string[]; 
   createdAt: Date;
 }
 

@@ -15,7 +15,9 @@ dependencies = [
     "alembic (>=1.17.1,<2.0.0)",
     "pydantic-settings (>=2.12.0,<3.0.0)",
     "python-multipart (>=0.0.20,<0.0.21)",
-    "passlib[bcrypt] (>=1.7.4,<2.0.0)"
+    "passlib[bcrypt] (>=1.7.4,<2.0.0)",
+    "greenlet (>=3.2.4,<4.0.0)",
+    "psycopg2-binary (>=2.9.11,<3.0.0)"
 ]
 
 
