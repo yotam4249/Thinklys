@@ -29,9 +29,9 @@ class User(Base):
         nullable=True
     )
 
-    gender: Mapped[GenderEnum] = mapped_column(
+    gender: Mapped[Optional[GenderEnum]] = mapped_column(
         GenderDBType,
-        nullable=False
+        nullable=True
     )
 
     profileImage: Mapped[Optional[str]] = mapped_column(

@@ -352,7 +352,7 @@ export class AuthController {
         password,
         dateOfBirth,
         gender,
-        profileImage, // S3 key sent from client after presigned PUT
+        profileImage,
       } = req.body ?? {};
 
       if (!username || !password) {

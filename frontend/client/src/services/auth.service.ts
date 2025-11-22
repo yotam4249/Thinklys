@@ -30,7 +30,7 @@ async function register(creds: Credentials): Promise<User> {
 async function login(creds: Credentials): Promise<User> {
   const { data } = await api.post<AuthResponse>("/auth/login", creds);
   TokenManager.set(data.accessToken, data.refreshToken);
-  store.dispatch(setUser(data.user)); // will include profileImageUrl if backend sent it
+  store.dispatch(setUser(data.user)); 
   return data.user;
 }
 
