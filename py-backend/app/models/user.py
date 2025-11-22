@@ -55,5 +55,12 @@ class User(Base):
         lazy="selectin",
     )
 
+    chats: Mapped[List["Chat"]] = relationship(
+        "Chat",
+        secondary="chat_members",
+        back_populates="members",
+        lazy="selectin",
+    )
+
 
 Index("ix_users_username_unique", User.username, unique=True)

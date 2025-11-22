@@ -1,10 +1,12 @@
 from fastapi import APIRouter
 from app.api.routes.auth_routes import router as auth_router
+from app.api.routes.chat_routes import router as chat_router
 
 api = APIRouter()
 
-# Include auth routes
+# Include routes
 api.include_router(auth_router)
+api.include_router(chat_router)
 
 @api.get("/hello")
 async def hello(): 

@@ -18,6 +18,8 @@ from app.core.redis import get_redis, close_redis
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes.routes import api
+from app.services.socket_service import sio
+import socketio
 
 
 @asynccontextmanager
@@ -72,8 +74,8 @@ async def health(db_session: AsyncSession = Depends(get_db)):
 
 app.include_router(api, prefix="/api")
 
-
 # Exception handlers to ensure CORS headers are included in error responses
+# (Must be registered before wrapping with Socket.IO)
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Global exception handler to ensure CORS headers are included."""
@@ -161,3 +163,7 @@ async def integrity_error_handler(request: Request, exc: IntegrityError):
         content={"code": error_code, "message": "Database constraint violation"},
         headers=cors_headers,
     )
+
+# Mount Socket.IO app - wrap FastAPI app with Socket.IO
+# This must be done AFTER all routes and exception handlers are registered
+app = socketio.ASGIApp(sio, app)
