@@ -27,9 +27,18 @@ async def lifespan(app: FastAPI):
     """Manage application lifespan - startup and shutdown."""
     # Startup
     await get_redis()  # Initialize Redis connection
+    
+    # Start quiz response consumer
+    from app.api.routes.quiz_routes import start_quiz_response_consumer
+    await start_quiz_response_consumer()
+    
     yield
     # Shutdown
     await close_redis()
+    
+    # Close Kafka connections
+    from app.services.kafka_service import kafka_service
+    kafka_service.close()
 
 
 app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)

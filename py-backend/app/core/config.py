@@ -27,6 +27,18 @@ class Settings(BaseSettings):
     S3_BUCKET: str
     S3_URL_TTL_SECONDS: int = 900  # 15 minutes default
 
+    # Kafka Configuration
+    KAFKA_BROKERS: str = ""  # Comma-separated list
+    KAFKA_CLIENT_ID: str = "py-backend"
+    KAFKA_SSL: bool = False
+    KAFKA_SASL_MECHANISM: str = ""
+    KAFKA_SASL_USERNAME: str = ""
+    KAFKA_SASL_PASSWORD: SecretStr = SecretStr("")
+    
+    # Kafka Topics
+    KAFKA_TOPIC_QUIZ_REQUEST: str = "quiz.generate.request"
+    KAFKA_TOPIC_QUIZ_RESPONSE: str = "quiz.generate.response"
+
     model_config = SettingsConfigDict(
         env_file = ".env.dev",
         extra="ignore"
