@@ -7,6 +7,7 @@ import uuid
 from app.core.db import get_db
 from app.middleware.auth_middleware import get_current_user
 from app.services.auth_service import AuthService
+from app.services.s3_service import get_presigned_get_url
 from app.api.dto.auth_dto import (
     RegisterDTO,
     LoginDTO,
@@ -138,7 +139,15 @@ async def login(
         # Set refresh token cookie
         _set_refresh_cookie(response, refresh_token)
 
-        user_response = _user_to_response(user)
+        # Generate presigned URL for profile image if exists
+        profile_image_url = None
+        if user.profileImage:
+            try:
+                profile_image_url = get_presigned_get_url(user.profileImage)
+            except Exception:
+                pass  # If presigned URL generation fails, continue without it
+
+        user_response = _user_to_response(user, profile_image_url=profile_image_url)
 
         return AuthResponse(
             user=user_response,
@@ -241,7 +250,15 @@ async def me(
             status_code=status.HTTP_404_NOT_FOUND, detail={"code": "NOT_FOUND"}
         )
 
-    return _user_to_response(user)
+    # Generate presigned URL for profile image if exists
+    profile_image_url = None
+    if user.profileImage:
+        try:
+            profile_image_url = get_presigned_get_url(user.profileImage)
+        except Exception:
+            pass  # If presigned URL generation fails, continue without it
+
+    return _user_to_response(user, profile_image_url=profile_image_url)
 
 
 @router.put("/profile", response_model=UserResponse)
@@ -280,7 +297,15 @@ async def update_profile(
     await db.commit()
     await db.refresh(user)
 
-    return _user_to_response(user)
+    # Generate presigned URL for profile image if exists
+    profile_image_url = None
+    if user.profileImage:
+        try:
+            profile_image_url = get_presigned_get_url(user.profileImage)
+        except Exception:
+            pass  # If presigned URL generation fails, continue without it
+
+    return _user_to_response(user, profile_image_url=profile_image_url)
 
 
 @router.put("/password")
@@ -335,5 +360,13 @@ async def get_user_profile(
             status_code=status.HTTP_404_NOT_FOUND, detail={"code": "NOT_FOUND"}
         )
 
-    return _user_to_response(user)
+    # Generate presigned URL for profile image if exists
+    profile_image_url = None
+    if user.profileImage:
+        try:
+            profile_image_url = get_presigned_get_url(user.profileImage)
+        except Exception:
+            pass  # If presigned URL generation fails, continue without it
+
+    return _user_to_response(user, profile_image_url=profile_image_url)
 
