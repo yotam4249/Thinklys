@@ -214,6 +214,48 @@ Thinklys follows a **microservices architecture** with three main services:
 - Async Kafka producers/consumers
 - Non-blocking I/O for all external services
 
+### Multi-Server Support & Synchronization
+
+The architecture is designed for **horizontal scaling** and **multi-server deployment**:
+
+**Stateless API Design:**
+- **JWT-based authentication** - No server-side session storage required
+- Stateless REST endpoints - Any server instance can handle any request
+- Shared database connection pooling - Multiple instances connect to same PostgreSQL cluster
+
+**Shared State Synchronization:**
+- **Redis** - Centralized cache and session store accessible by all server instances
+  - AI response caching synchronized across all servers
+  - Shared session data for consistent user experience
+- **PostgreSQL** - Single source of truth for all persistent data
+  - Connection pooling handles concurrent connections from multiple instances
+  - Database-level transactions ensure data consistency
+
+**Event-Driven Synchronization:**
+- **Apache Kafka** - Distributed message queue for inter-service communication
+  - Multiple backend instances can consume from same Kafka topics
+  - Consumer groups ensure load balancing across instances
+  - Event ordering and delivery guarantees maintain consistency
+  - RAG server can scale independently with multiple consumer instances
+
+**Real-time Communication:**
+- **Socket.IO** - Supports multiple server instances with Redis adapter
+  - Redis pub/sub for cross-instance WebSocket message broadcasting
+  - Ensures real-time messages reach all connected clients regardless of which server they're connected to
+  - Sticky sessions recommended for WebSocket connections (via load balancer)
+
+**Load Balancing Ready:**
+- Stateless API design allows for standard load balancing (round-robin, least-connections, etc.)
+- Health check endpoints (`/health`) for load balancer monitoring
+- CORS configuration supports multiple origins for distributed frontend deployment
+
+**Scalability Features:**
+- **Horizontal scaling** - Add more backend instances behind a load balancer
+- **Independent scaling** - Scale backend and RAG server independently based on load
+- **Database connection pooling** - Efficient connection management across instances
+- **Kafka consumer groups** - Automatic load distribution across consumer instances
+- **Redis clustering** - Can be extended to Redis Cluster for high availability
+
 ## 🔧 Development Setup
 
 ### Prerequisites
