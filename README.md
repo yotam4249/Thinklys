@@ -1,513 +1,237 @@
 # Thinklys
 
-A full-stack educational platform featuring real-time chat, AI-powered Q&A, and RAG-based quiz generation. Built with a microservices architecture using FastAPI, React, and modern distributed systems technologies.
+A distributed backend system featuring AI-powered Q&A and RAG-based quiz generation. Built with FastAPI microservices architecture, designed for horizontal scaling across multiple server instances.
 
-## 🏗️ Architecture Overview
+## 🏗️ Architecture
 
-Thinklys follows a **microservices architecture** with three main services:
+**Multi-Server Microservices Architecture:**
 
 ```
 ┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐
-│   Frontend      │      │   Backend API   │      │   RAG Server    │
-│  (React/TS)     │◄────►│   (FastAPI)     │◄────►│   (Python)      │
-└─────────────────┘      └─────────────────┘      └─────────────────┘
-                                │                          │
-                                ▼                          ▼
-                         ┌──────────────┐          ┌──────────────┐
-                         │  PostgreSQL  │          │  ChromaDB    │
-                         │   Redis      │          │  (Vector)   │
-                         │   Kafka      │          └──────────────┘
-                         │   Socket.IO  │
-                         └──────────────┘
+│   Backend API   │      │   Backend API   │      │   RAG Server    │
+│   (Instance 1)  │      │   (Instance N)  │      │   (Scalable)    │
+│   FastAPI       │      │   FastAPI       │      │   Python        │
+└────────┬────────┘      └────────┬────────┘      └────────┬────────┘
+         │                        │                        │
+         └────────────────────────┼────────────────────────┘
+                                  │
+         ┌────────────────────────┼────────────────────────┐
+         ▼                        ▼                        ▼
+    ┌──────────┐          ┌──────────┐          ┌──────────┐
+    │PostgreSQL│          │  Redis   │          │  Kafka   │
+    │  (Shared)│          │ (Shared) │          │(Distributed)│
+    └──────────┘          └──────────┘          └──────────┘
+                                  │
+                                  ▼
+                          ┌──────────┐
+                          │ ChromaDB  │
+                          │ (Vector)  │
+                          └──────────┘
 ```
 
-### Service Breakdown
+### Services
 
-1. **Frontend Client** (`frontend/client/`) - React + TypeScript SPA
-2. **Backend API** (`py-backend/`) - FastAPI REST API with WebSocket support
-3. **RAG Server** (`rag-server/`) - Microservice for AI quiz generation
+1. **Backend API** (`py-backend/`) - FastAPI REST API with WebSocket support
+   - Stateless design for horizontal scaling
+   - JWT authentication, async database operations
+   - Kafka producer/consumer for event-driven communication
+   - Redis caching for AI responses
+
+2. **RAG Server** (`rag-server/`) - AI microservice for quiz generation
+   - Kafka consumer for async processing
+   - Vector embeddings with Sentence Transformers
+   - ChromaDB for similarity search
+   - Document processing (PDF, DOCX, TXT)
 
 ## 🚀 Tech Stack
 
-### Backend (Primary Focus)
-
-**Core Framework:**
-- **FastAPI** - Modern, high-performance async web framework
-- **Python 3.13** - Latest Python features and performance improvements
-- **Uvicorn** - ASGI server with standard workers
-
-**Database & ORM:**
-- **PostgreSQL 16** - Primary relational database
-- **SQLAlchemy 2.0** - Modern async ORM with type hints
-- **Alembic** - Database migrations and versioning
-- **AsyncPG** - High-performance async PostgreSQL driver
-
-**Caching & Session Management:**
-- **Redis 7** - Caching layer for AI responses and session data
-- **aioredis** - Async Redis client
-
-**Message Queue & Event Streaming:**
-- **Apache Kafka** - Event-driven architecture for async processing
-- **Kafka-Python** - Producer/Consumer implementation
-- **Zookeeper** - Kafka coordination service
-
-**Real-time Communication:**
-- **Socket.IO** (Python) - WebSocket server for real-time chat
-- **python-socketio** - Async Socket.IO implementation
-
-**Authentication & Security:**
-- **JWT** (PyJWT) - Access and refresh token authentication
-- **bcrypt** - Password hashing
-- **Passlib** - Password hashing utilities
-
-**Cloud Services:**
-- **AWS S3** (boto3) - File storage and retrieval
-- **OpenAI API** - LLM integration for Q&A
-
-**Other Backend Technologies:**
-- **Pydantic** - Data validation and settings management
-- **Pydantic Settings** - Environment-based configuration
-- **Python Multipart** - File upload handling
-
-### RAG Server
-
-**Vector Database:**
-- **ChromaDB** - Embedding storage and similarity search
-
-**ML/AI:**
-- **Sentence Transformers** - Text embedding generation
-- **PyPDF2** - PDF document processing
-- **python-docx** - Word document processing
-
-**Event Processing:**
-- **Kafka-Python** - Consumer for quiz generation requests
-
-### Frontend
+### Backend API (py-backend)
 
 **Core:**
-- **React 19** - UI library
-- **TypeScript** - Type-safe JavaScript
-- **Vite** - Build tool and dev server
+- **FastAPI** - Async web framework
+- **Python 3.13** - Latest Python features
+- **SQLAlchemy 2.0** - Async ORM with PostgreSQL
+- **Alembic** - Database migrations
 
-**State Management:**
-- **Redux Toolkit** - Application state management
-- **React Redux** - React bindings
+**Distributed Systems:**
+- **Apache Kafka** - Event-driven messaging between services
+- **Redis 7** - Centralized caching and session store
+- **Socket.IO** - Real-time WebSocket with Redis adapter for multi-instance support
 
-**UI Framework:**
-- **Material-UI (MUI) 7** - Component library
-- **Emotion** - CSS-in-JS styling
+**AI/ML Integration:**
+- **OpenAI API** - LLM integration for Q&A
+- **Redis Caching** - AI response caching to reduce API costs
 
-**Networking:**
-- **Axios** - HTTP client
-- **Socket.IO Client** - Real-time WebSocket client
-- **React Router DOM** - Client-side routing
+**Infrastructure:**
+- **PostgreSQL 16** - Primary database with connection pooling
+- **AWS S3** (boto3) - File storage
+- **JWT** - Stateless authentication
 
-### Infrastructure
+### RAG Server (rag-server)
 
-**Containerization:**
-- **Docker** - Container runtime
-- **Docker Compose** - Multi-container orchestration
+**AI/ML:**
+- **Sentence Transformers** - Text embedding generation
+- **ChromaDB** - Vector database for semantic search
+- **Kafka-Python** - Consumer for async quiz generation requests
 
-**Services:**
-- PostgreSQL 16
-- Redis 7
-- Apache Kafka + Zookeeper
-- Qdrant (vector database - configured but using ChromaDB)
+**Document Processing:**
+- **PyPDF2** - PDF parsing
+- **python-docx** - Word document processing
 
-## 📋 Key Features
+## 🧠 AI/ML Features
 
-### 1. Real-time Chat System
-- **Group chats** and **direct messages (DM)**
-- Real-time message delivery via WebSocket
-- Message history with pagination
-- Chat filtering and search
-- User presence and typing indicators
+### 1. RAG-Based Quiz Generation
+- **Retrieval Augmented Generation** pipeline
+- Vector embeddings for semantic similarity search
+- Document ingestion and chunking
+- Topic-based quiz generation with difficulty levels
+- Asynchronous processing via Kafka
 
 ### 2. AI-Powered Q&A
-- OpenAI GPT integration for intelligent question answering
-- **Redis caching** to reduce API costs and improve response times
+- OpenAI GPT integration
+- Redis caching layer for cost optimization
 - Question deduplication and answer reuse
 
-### 3. RAG-Based Quiz Generation
-- **Retrieval Augmented Generation** for context-aware quiz creation
-- Vector similarity search using ChromaDB
-- Document processing (PDF, DOCX, TXT)
-- Topic-based quiz generation with difficulty levels
-- **Asynchronous processing** via Kafka message queue
-- Real-time quiz delivery via WebSocket
+### 3. Vector Search
+- ChromaDB for embedding storage
+- Semantic similarity search across document corpus
+- Context-aware quiz question generation
 
-### 4. File Management
-- **AWS S3** integration for file storage
-- Secure, time-limited pre-signed URLs
-- Support for multiple file types
-- File upload and retrieval APIs
+## 🔄 Multi-Server Architecture & Synchronization
 
-### 5. Authentication & Authorization
-- JWT-based authentication (access + refresh tokens)
-- Secure password hashing with bcrypt
-- Token refresh mechanism
-- Protected routes and middleware
+### Horizontal Scaling Design
 
-### 6. User Management
-- User profiles with customizable avatars
-- Profile preview and editing
-- User search and discovery
-
-## 🏛️ Backend Architecture Details
-
-### API Structure
-
-```
-/api
-├── /auth          - Authentication endpoints (login, register, refresh)
-├── /chat          - Chat management (create, list, messages)
-├── /files         - File upload/download endpoints
-├── /quiz          - Quiz generation and management
-└── /ai            - AI Q&A endpoints
-```
-
-### Database Models
-
-- **User** - User accounts and profiles
-- **Chat** - Chat rooms (group/DM) with many-to-many members
-- **Message** - Chat messages with types (text, file, etc.)
-- **QuizResult** - User quiz attempts and scores
-- **RefreshToken** - Token rotation for security
-
-### Service Layer
-
-**Core Services:**
-- `auth_service.py` - Authentication and authorization logic
-- `chat_service.py` - Chat and message business logic
-- `openai_service.py` - OpenAI API integration
-- `ai_cache_service.py` - Redis caching for AI responses
-- `s3_service.py` - AWS S3 file operations
-- `socket_service.py` - WebSocket event handling
-- `kafka_service.py` - Kafka producer/consumer management
-
-### Event-Driven Architecture
-
-**Kafka Topics:**
-- `quiz.generate.request` - Quiz generation requests
-- `quiz.generate.response` - Quiz generation responses
-- `quiz.generate.completion` - Quiz completion notifications
-
-**Flow:**
-1. Client requests quiz via REST API
-2. Backend publishes request to Kafka
-3. RAG server consumes request, generates quiz
-4. RAG server publishes response to Kafka
-5. Backend consumes response, sends to client via WebSocket
-
-### Caching Strategy
-
-- **Redis** used for:
-  - AI Q&A answer caching (question → answer mapping)
-  - Session data
-  - Temporary data storage
-
-### Async/Await Patterns
-
-- Full async/await throughout backend
-- Async database operations with SQLAlchemy
-- Async Redis operations
-- Async Kafka producers/consumers
-- Non-blocking I/O for all external services
-
-### Multi-Server Support & Synchronization
-
-The architecture is designed for **horizontal scaling** and **multi-server deployment**:
-
-**Stateless API Design:**
-- **JWT-based authentication** - No server-side session storage required
-- Stateless REST endpoints - Any server instance can handle any request
-- Shared database connection pooling - Multiple instances connect to same PostgreSQL cluster
+**Stateless Backend Instances:**
+- JWT-based authentication (no server-side sessions)
+- Stateless REST endpoints - any instance handles any request
+- Shared PostgreSQL with connection pooling
+- Health check endpoints (`/health`) for load balancer
 
 **Shared State Synchronization:**
-- **Redis** - Centralized cache and session store accessible by all server instances
-  - AI response caching synchronized across all servers
-  - Shared session data for consistent user experience
-- **PostgreSQL** - Single source of truth for all persistent data
-  - Connection pooling handles concurrent connections from multiple instances
-  - Database-level transactions ensure data consistency
+- **Redis** - Centralized cache accessible by all backend instances
+  - AI response caching synchronized across servers
+  - Cross-instance WebSocket message broadcasting via Redis pub/sub
+- **PostgreSQL** - Single source of truth with transaction consistency
+- **Kafka** - Distributed message queue
+  - Consumer groups for load balancing across backend instances
+  - RAG server scales independently with multiple consumer instances
 
-**Event-Driven Synchronization:**
-- **Apache Kafka** - Distributed message queue for inter-service communication
-  - Multiple backend instances can consume from same Kafka topics
-  - Consumer groups ensure load balancing across instances
-  - Event ordering and delivery guarantees maintain consistency
-  - RAG server can scale independently with multiple consumer instances
+**Event-Driven Communication:**
+- Backend instances publish quiz requests to Kafka
+- RAG server consumers process requests asynchronously
+- Responses published back to Kafka
+- Backend consumers deliver results via WebSocket
 
-**Real-time Communication:**
-- **Socket.IO** - Supports multiple server instances with Redis adapter
-  - Redis pub/sub for cross-instance WebSocket message broadcasting
-  - Ensures real-time messages reach all connected clients regardless of which server they're connected to
-  - Sticky sessions recommended for WebSocket connections (via load balancer)
+**Scalability:**
+- **Horizontal scaling** - Add backend instances behind load balancer
+- **Independent scaling** - Scale backend and RAG server separately
+- **Kafka consumer groups** - Automatic load distribution
+- **Connection pooling** - Efficient resource management
 
-**Load Balancing Ready:**
-- Stateless API design allows for standard load balancing (round-robin, least-connections, etc.)
-- Health check endpoints (`/health`) for load balancer monitoring
-- CORS configuration supports multiple origins for distributed frontend deployment
+## 📋 Backend Services
 
-**Scalability Features:**
-- **Horizontal scaling** - Add more backend instances behind a load balancer
-- **Independent scaling** - Scale backend and RAG server independently based on load
-- **Database connection pooling** - Efficient connection management across instances
-- **Kafka consumer groups** - Automatic load distribution across consumer instances
-- **Redis clustering** - Can be extended to Redis Cluster for high availability
+**Core Services:**
+- `auth_service.py` - JWT authentication
+- `openai_service.py` - OpenAI API integration
+- `ai_cache_service.py` - Redis caching for AI responses
+- `kafka_service.py` - Kafka producer/consumer management
+- `chat_service.py` - Chat business logic
+- `s3_service.py` - AWS S3 operations
+- `socket_service.py` - WebSocket with Redis adapter
 
-## 🔧 Development Setup
+**RAG Services:**
+- `quiz_generator.py` - RAG-based quiz generation
+- `embedding_service.py` - Text embedding generation
+- `vector_store.py` - ChromaDB operations
+- `file_processor.py` - Document parsing
 
-### Prerequisites
+## 🔄 Data Flow
 
-- Python 3.13+
-- Node.js 18+
-- Docker & Docker Compose
-- Poetry (Python package manager)
-- npm/yarn
+### Quiz Generation (Multi-Server)
+```
+Client → Backend Instance 1 → Kafka (request topic)
+                                    ↓
+                          RAG Server Consumer
+                                    ↓
+                          ChromaDB Vector Search
+                                    ↓
+                          Quiz Generation
+                                    ↓
+Client ← Backend Instance N ← Kafka (response topic)
+```
 
-### Backend Setup
+### AI Q&A (Cached)
+```
+Client → Backend Instance → Redis (cache check)
+                              ↓ (miss)
+                              OpenAI API
+                              ↓
+                              Redis (store)
+                              ↓
+Client ← Backend Instance
+```
 
+## 🛠️ Setup
+
+### Backend API
 ```bash
 cd py-backend
-
-# Install dependencies
 poetry install
-
-# Set up environment variables
-cp .env.example .env.dev
-# Edit .env.dev with your configuration
-
-# Start infrastructure services
-docker-compose up -d
-
-# Run database migrations
+docker-compose up -d  # PostgreSQL, Redis, Kafka
 poetry run alembic upgrade head
-
-# Start development server
 poetry run python -m app.main
-# Or use: poetry run dev
 ```
 
-### RAG Server Setup
-
+### RAG Server
 ```bash
 cd rag-server
-
-# Install dependencies
 poetry install
-
-# Set up environment variables
 # Configure Kafka broker addresses
-
-# Start RAG server
 poetry run python -m rag.main
-# Or use: poetry run dev
 ```
 
-### Frontend Setup
-
-```bash
-cd frontend/client
-
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
-```
-
-### Docker Services
-
-The `docker-compose.yml` includes:
-- PostgreSQL (port 55432)
-- Redis (port 6379)
-- Kafka + Zookeeper (ports 9092, 9093)
-- PgAdmin (port 5050)
+### Multi-Instance Deployment
+- Deploy multiple backend instances behind load balancer
+- Configure shared Redis and PostgreSQL
+- Set Kafka broker addresses for all instances
+- Enable Redis adapter for Socket.IO cross-instance messaging
 
 ## 📁 Project Structure
 
 ```
-Thinklys/
-├── py-backend/              # FastAPI backend service
-│   ├── app/
-│   │   ├── api/            # API routes and DTOs
-│   │   ├── core/           # Configuration, DB, Redis
-│   │   ├── middleware/     # Auth middleware
-│   │   ├── models/         # SQLAlchemy models
-│   │   ├── services/       # Business logic services
-│   │   └── utils/          # Utility functions
-│   ├── alembic/            # Database migrations
-│   └── docker-compose.yml  # Infrastructure services
-│
-├── rag-server/              # RAG microservice
-│   ├── rag/
-│   │   ├── consumers/      # Kafka consumers
-│   │   ├── services/       # Quiz generation, embeddings
-│   │   └── core/           # Configuration, Kafka client
-│   └── chroma_db/          # Vector database storage
-│
-└── frontend/
-    └── client/             # React frontend
-        ├── src/
-        │   ├── components/ # React components
-        │   ├── pages/      # Page components
-        │   ├── services/   # API clients
-        │   ├── store/      # Redux store
-        │   └── types/      # TypeScript types
-        └── public/         # Static assets
+py-backend/
+├── app/
+│   ├── api/routes/      # REST endpoints
+│   ├── services/        # Business logic (AI, Kafka, Redis)
+│   ├── models/          # SQLAlchemy models
+│   ├── core/            # DB, Redis, config
+│   └── middleware/      # Auth middleware
+└── alembic/             # Migrations
+
+rag-server/
+├── rag/
+│   ├── consumers/       # Kafka consumers
+│   ├── services/        # Quiz generation, embeddings
+│   └── core/            # Kafka client, config
+└── chroma_db/           # Vector database
 ```
 
-## 🔐 Environment Variables
-
-### Backend (.env.dev)
-
-```env
-APP_NAME=Thinklys API
-APP_ENV=development
-PORT=8000
-DATABASE_URL=postgresql+asyncpg://user:pass@localhost:55432/appdb
-REDIS_URL=redis://localhost:6379
-
-# JWT
-ACCESS_TOKEN_SECRET=your-secret
-REFRESH_TOKEN_SECRET=your-secret
-ACCESS_TOKEN_EXPIRE=15
-REFRESH_TOKEN_EXPIRE=30
-
-# AWS S3
-AWS_REGION=us-east-1
-AWS_ACCESS_KEY_ID=your-key
-AWS_SECRET_ACCESS_KEY=your-secret
-S3_BUCKET=your-bucket
-
-# Kafka
-KAFKA_BROKERS=localhost:9092
-KAFKA_CLIENT_ID=py-backend
-
-# OpenAI
-OPENAI_API_KEY=your-key
-
-# CORS
-CORS_ALLOWED_ORIGINS=["http://localhost:5173"]
-```
-
-## 🧪 Key Backend Patterns & Practices
-
-### 1. Async/Await Throughout
-- All database operations use async SQLAlchemy
-- Async Redis operations
-- Non-blocking I/O for external APIs
-
-### 2. Dependency Injection
-- FastAPI's dependency injection for database sessions
-- Service layer abstraction
-
-### 3. Error Handling
-- Global exception handlers with CORS support
-- Structured error responses
-- Database integrity error handling
-
-### 4. Type Safety
-- Pydantic models for request/response validation
-- SQLAlchemy 2.0 with type hints
-- Type-safe DTOs
-
-### 5. Database Migrations
-- Alembic for version-controlled schema changes
-- Migration scripts for all model changes
-
-### 6. Security Best Practices
-- JWT token rotation
-- Password hashing with bcrypt
-- CORS configuration
-- Secret management with Pydantic Settings
-
-## 🚦 API Examples
-
-### Authentication
-```bash
-POST /api/auth/register
-POST /api/auth/login
-POST /api/auth/refresh
-```
-
-### Chat
-```bash
-GET  /api/chat              # List user's chats
-POST /api/chat              # Create new chat
-GET  /api/chat/{id}/messages # Get chat messages
-POST /api/chat/{id}/messages # Send message
-```
-
-### Quiz Generation
-```bash
-POST /api/quiz/generate     # Request quiz generation
-GET  /api/quiz/{id}         # Get quiz details
-POST /api/quiz/{id}/submit  # Submit quiz answers
-```
-
-### AI Q&A
-```bash
-POST /api/ai/qa            # Ask question (cached)
-```
-
-## 📊 Performance Optimizations
-
-1. **Database Indexing** - Strategic indexes on foreign keys and query patterns
-2. **Redis Caching** - AI responses cached to reduce API calls
-3. **Async Processing** - Kafka for long-running quiz generation
-4. **Connection Pooling** - Database and Redis connection pools
-5. **Lazy Loading** - SQLAlchemy relationships optimized with selectin loading
-
-## 🔄 Data Flow Examples
-
-### Quiz Generation Flow
-```
-Client → FastAPI → Kafka (request) → RAG Server
-                                    ↓
-Client ← WebSocket ← FastAPI ← Kafka (response) ← RAG Server
-```
-
-### Chat Message Flow
-```
-Client → FastAPI → PostgreSQL
-                ↓
-Client ← WebSocket ← FastAPI (broadcast to chat members)
-```
-
-### AI Q&A Flow
-```
-Client → FastAPI → Redis (cache check)
-                ↓ (cache miss)
-                OpenAI API
-                ↓
-                Redis (cache store)
-                ↓
-Client ← FastAPI
-```
-
-## 🛠️ Technologies & Tools Summary
+## 🔐 Key Technologies
 
 **Backend:**
 - FastAPI, SQLAlchemy 2.0, PostgreSQL, Redis
-- Kafka, Socket.IO, JWT, bcrypt
-- AWS S3, OpenAI API
-- Alembic, Pydantic, Poetry
+- Apache Kafka, Socket.IO, JWT
+- OpenAI API, AWS S3
 
-**RAG/ML:**
-- ChromaDB, Sentence Transformers
-- Kafka consumers, Document processing
-
-**Frontend:**
-- React 19, TypeScript, Vite
-- Redux Toolkit, Material-UI
-- Socket.IO Client, Axios
+**AI/ML:**
+- Sentence Transformers, ChromaDB
+- RAG pipeline, Vector embeddings
+- Document processing
 
 **Infrastructure:**
 - Docker, Docker Compose
-- PostgreSQL, Redis, Kafka, Zookeeper
-
+- Multi-server deployment ready
+- Horizontal scaling architecture
 
 ## 👤 Author
 
@@ -516,5 +240,4 @@ Client ← FastAPI
 
 ---
 
-*Built with modern Python async/await patterns, microservices architecture, and event-driven design principles.*
-
+*Distributed backend system with AI/ML capabilities, designed for horizontal scaling and multi-server deployment.*
