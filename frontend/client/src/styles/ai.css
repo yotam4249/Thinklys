@@ -462,4 +462,66 @@
     box-shadow: 0 4px 12px rgba(255, 92, 92, 0.25);
     border-color: color-mix(in oklab, #ff5c5c 55%, transparent);
   }
+
+  /* === File Upload === */
+  .ai-file-upload {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px 12px;
+  }
+
+  .ai-file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 8px;
+    background: color-mix(in oklab, var(--surface-2) 50%, transparent);
+    border-radius: 12px;
+    border: 1px solid color-mix(in oklab, var(--border) 40%, transparent);
+  }
+
+  .ai-file-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: color-mix(in oklab, var(--surface) 98%, transparent);
+    border-radius: 8px;
+    border: 1px solid color-mix(in oklab, var(--border) 35%, transparent);
+    gap: 12px;
+  }
+
+  .ai-file-name {
+    flex: 1;
+    font-size: 13px;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ai-file-remove {
+    background: color-mix(in oklab, #ff5c5c 12%, transparent);
+    color: #ff5c5c;
+    border: none;
+    border-radius: 6px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+  }
+
+  .ai-file-remove:hover {
+    background: color-mix(in oklab, #ff5c5c 20%, transparent);
+    transform: scale(1.1);
+  }
   

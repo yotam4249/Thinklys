@@ -30,6 +30,13 @@ ALLOWED_IMAGE_TYPES = {
     "image/gif",
 }
 
+ALLOWED_DOCUMENT_TYPES = {
+    "text/plain",  # .txt
+    "application/pdf",  # .pdf
+    "application/msword",  # .doc
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # .docx
+}
+
 
 def get_presigned_put_url(
     key: str,

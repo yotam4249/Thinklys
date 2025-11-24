@@ -49,15 +49,51 @@ export async function getQuiz(
   console.log("[FE][AI] getQuiz →", { topic, level });
 
   try {
-    const { data } = await api.post<{ cached: boolean; quiz: QuizPayload }>(
+    const { data } = await api.post<{ success: boolean; quiz: QuizPayload | null; error?: string; cached: boolean }>(
       "/ai/quiz", // ✅ no double /api
       { topic, level }
     );
 
     console.log("[FE][AI] getQuiz response:", data);
-    return data;
+    
+    if (!data.success || !data.quiz) {
+      throw new Error(data.error || "Failed to generate quiz");
+    }
+    
+    return { cached: data.cached, quiz: data.quiz };
   } catch (err: any) {
     console.error("[FE][AI] getQuiz error:", err?.response || err);
+    throw err;
+  }
+}
+
+/**
+ * Generate quiz using uploaded files
+ * Each quiz has 5 questions × 4 options × 1 correct answer
+ */
+export async function getQuizWithFiles(
+  topic: string,
+  level: string,
+  files: string[],
+  fileTypes: string[]
+): Promise<{ cached: boolean; quiz: QuizPayload }> {
+  console.log("[FE][AI] getQuizWithFiles →", { topic, level, files, fileTypes });
+
+  try {
+    const { data } = await api.post<{ success: boolean; quiz: QuizPayload | null; error?: string; cached: boolean }>(
+      "/ai/quiz", // ✅ no double /api
+      { topic, level, files, fileTypes }
+    );
+
+    console.log("[FE][AI] getQuizWithFiles response:", data);
+    
+    if (!data.success || !data.quiz) {
+      throw new Error(data.error || "Failed to generate quiz");
+    }
+    
+    return { cached: data.cached, quiz: data.quiz };
+  } catch (err: any) {
+    console.error("[FE][AI] getQuizWithFiles error:", err?.response || err);
     throw err;
   }
 }

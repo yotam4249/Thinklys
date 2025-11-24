@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     # Kafka Topics
     KAFKA_TOPIC_QUIZ_REQUEST: str = "quiz.generate.request"
     KAFKA_TOPIC_QUIZ_RESPONSE: str = "quiz.generate.response"
+    KAFKA_TOPIC_QUIZ_COMPLETION: str = "quiz.generate.completion"
     
     # Vector Database
     CHROMA_PERSIST_DIR: str = "./chroma_db"

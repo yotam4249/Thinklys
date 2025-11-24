@@ -33,3 +33,26 @@ class QuizGenerateResponseDTO(BaseModel):
     error: Optional[str] = None
     cached: bool = False
 
+
+class QuizResultSaveDTO(BaseModel):
+    """DTO for saving quiz result."""
+    topic: str = Field(..., description="Quiz topic")
+    level: str = Field(..., description="Difficulty level")
+    score: int = Field(..., ge=0, description="Number of correct answers")
+    total: int = Field(..., gt=0, description="Total number of questions")
+
+
+class QuizHistoryItemDTO(BaseModel):
+    """DTO for a quiz history item."""
+    topic: str
+    level: str
+    score: int
+    total: int
+    completedAt: Optional[str] = None
+
+
+class QuizResultSaveResponseDTO(BaseModel):
+    """DTO for quiz result save response."""
+    success: bool
+    quizHistory: Optional[List[QuizHistoryItemDTO]] = None
+

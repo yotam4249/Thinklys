@@ -1,13 +1,15 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { useEffect, useRef, useState } from "react";
-import { askQuestion, getQuiz, saveQuizResult, type QuizPayload } from "../../services/ai.services";
+import { askQuestion, getQuiz, getQuizWithFiles, saveQuizResult, type QuizPayload } from "../../services/ai.services";
 import { useAppSelector, useAppDispatch } from "../../store/hooks";
 import { selectAuthUser, setUser } from "../../store/slices/authSlice";
 import { createQuizPreviewMessage } from "../../utils/quiz.utils";
+import { presignUpload, uploadViaPresignedPut } from "../../services/s3.service";
 import "../../styles/ai.css";
 
 type Msg = { id: string; role: "user" | "assistant" | "system"; content: string };
-type QuizStage = "idle" | "confirm" | "topic" | "difficulty" | "ready";
+type QuizStage = "idle" | "mode" | "files" | "topic" | "difficulty" | "ready";
+type QuizMode = "files" | "openai" | null;
 
 function newId() {
   return crypto.randomUUID();
@@ -33,6 +35,7 @@ export function AiAgentPanel({
 
   // Quiz state
   const [quizStage, setQuizStage] = useState<QuizStage>("idle");
+  const [selectedQuizMode, setSelectedQuizMode] = useState<QuizMode>(null);
   const [quizMode, setQuizMode] = useState(false);
   const [quizTopic, setQuizTopic] = useState("");
   const [quizLevel, setQuizLevel] = useState("");
@@ -40,6 +43,11 @@ export function AiAgentPanel({
   const [currentIdx, setCurrentIdx] = useState(0);
   const [answers, setAnswers] = useState<number[]>([]);
   const [hasSharedQuiz, setHasSharedQuiz] = useState(false);
+  
+  // File upload state
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const listRef = useRef<HTMLDivElement | null>(null);
 
@@ -80,11 +88,65 @@ export function AiAgentPanel({
 
   // ----- QUIZ FLOW -----
   const handleStartQuiz = () => {
-    setQuizStage("confirm");
+    setQuizStage("mode");
     setMessages((prev) => [
       ...prev,
-      { id: newId(), role: "assistant", content: "Would you like to take a short quiz?" },
+      { id: newId(), role: "assistant", content: "How would you like to generate the quiz?" },
     ]);
+  };
+
+  const handleSelectQuizMode = (mode: "files" | "openai") => {
+    if (mode === "openai") {
+      setMessages((p) => [...p, { id: newId(), role: "assistant", content: "OpenAI mode is not yet implemented. Please use files mode." }]);
+      return;
+    }
+    
+    setSelectedQuizMode(mode);
+    setMessages((p) => [
+      ...p,
+      { id: newId(), role: "user", content: "Using files" },
+      { id: newId(), role: "assistant", content: "Upload up to 5 files and enter a topic for your quiz." },
+    ]);
+    setQuizStage("files");
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    
+    // Limit to 5 files total
+    const remainingSlots = 5 - uploadedFiles.length;
+    const filesToAdd = files.slice(0, remainingSlots);
+    
+    if (files.length > remainingSlots) {
+      setMessages((p) => [
+        ...p,
+        { id: newId(), role: "assistant", content: `You can only upload up to 5 files. Added ${filesToAdd.length} file(s).` },
+      ]);
+    }
+    
+    setUploadedFiles((prev) => [...prev, ...filesToAdd]);
+    
+    // Reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleRemoveFile = (index: number) => {
+    setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleFilesReady = () => {
+    if (uploadedFiles.length === 0) {
+      setMessages((p) => [
+        ...p,
+        { id: newId(), role: "assistant", content: "Please upload at least one file before continuing." },
+      ]);
+      return;
+    }
+    setMessages((p) => [...p, { id: newId(), role: "assistant", content: "What topic would you like the quiz to focus on?" }]);
+    setQuizStage("topic");
   };
 
   const handleQuizAction = (choice: "yes" | "no") => {
@@ -126,19 +188,67 @@ export function AiAgentPanel({
         { id: newId(), role: "assistant", content: "Sure, maybe later!" },
       ]);
       setQuizStage("idle");
+      setSelectedQuizMode(null);
+      setUploadedFiles([]);
       return;
     }
+    
     setQuizStage("idle");
     setMessages((p) => [
       ...p,
       { id: newId(), role: "assistant", content: "Generating your quiz..." },
     ]);
-    const { quiz } = await getQuiz(quizTopic, quizLevel);
-    setQuiz(quiz);
-    setAnswers(Array(quiz.items.length).fill(-1));
-    setQuizMode(true);
-    setCurrentIdx(0);
-    setHasSharedQuiz(false); // Reset when new quiz is created
+    
+    try {
+      let quiz: QuizPayload;
+      
+      if (selectedQuizMode === "files" && uploadedFiles.length > 0) {
+        // Upload files to S3 and get quiz with files
+        setUploading(true);
+        const fileKeys: string[] = [];
+        const fileTypes: string[] = [];
+        
+        for (const file of uploadedFiles) {
+          try {
+            const { url, key } = await presignUpload(file.type, { filename: file.name, prefix: "quiz/files" });
+            await uploadViaPresignedPut(url, file, file.type);
+            fileKeys.push(key);
+            fileTypes.push(file.type);
+          } catch (err) {
+            console.error("[AI] Failed to upload file:", err);
+            setMessages((p) => [
+              ...p,
+              { id: newId(), role: "assistant", content: `Failed to upload ${file.name}. Please try again.` },
+            ]);
+            setUploading(false);
+            return;
+          }
+        }
+        
+        const result = await getQuizWithFiles(quizTopic, quizLevel, fileKeys, fileTypes);
+        quiz = result.quiz;
+        setUploading(false);
+      } else {
+        // Regular quiz generation (OpenAI mode - not implemented yet, fallback to regular)
+        const result = await getQuiz(quizTopic, quizLevel);
+        quiz = result.quiz;
+      }
+      
+      setQuiz(quiz);
+      setAnswers(Array(quiz.items.length).fill(-1));
+      setQuizMode(true);
+      setCurrentIdx(0);
+      setHasSharedQuiz(false);
+      setSelectedQuizMode(null);
+      setUploadedFiles([]);
+    } catch (err) {
+      console.error("[AI] Failed to generate quiz:", err);
+      setMessages((p) => [
+        ...p,
+        { id: newId(), role: "assistant", content: "Sorry, I couldn't generate the quiz. Please try again." },
+      ]);
+      setUploading(false);
+    }
   };
 
   const handleManualInput = () => {
@@ -229,7 +339,7 @@ export function AiAgentPanel({
               <h2 className="ai-title">AI Teaching Assistant</h2>
               <p className="ai-sub">Ask questions or start a quiz</p>
             </div>
-            {(quizStage === "idle" || quizStage === "confirm") && (
+            {quizStage === "idle" && (
               <button 
                 className="btn btn-primary" 
                 onClick={handleStartQuiz}
@@ -256,6 +366,80 @@ export function AiAgentPanel({
                   </div>
                 </article>
               ))}
+
+            {/* Quiz mode selection */}
+            {quizStage === "mode" && (
+              <div className="ai-quiz-buttons" role="group" aria-label="Select quiz generation mode">
+                <button 
+                  className="btn btn-primary" 
+                  onClick={() => handleSelectQuizMode("files")}
+                  type="button"
+                  aria-label="Generate quiz using files"
+                >
+                  📄 Using Files
+                </button>
+                <button 
+                  className="btn" 
+                  onClick={() => handleSelectQuizMode("openai")}
+                  type="button"
+                  aria-label="Generate quiz using OpenAI (not implemented)"
+                  disabled
+                >
+                  🤖 Using OpenAI (Coming Soon)
+                </button>
+              </div>
+            )}
+
+            {/* File upload stage */}
+            {quizStage === "files" && (
+              <div className="ai-file-upload" role="group" aria-label="Upload files for quiz">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  onChange={handleFileSelect}
+                  style={{ display: "none" }}
+                  accept=".txt,.pdf,.doc,.docx"
+                />
+                <button
+                  className="btn btn-primary"
+                  onClick={() => fileInputRef.current?.click()}
+                  type="button"
+                  disabled={uploadedFiles.length >= 5}
+                  aria-label="Select files to upload"
+                >
+                  {uploadedFiles.length >= 5 ? "Maximum 5 files" : "📁 Select Files"}
+                </button>
+                
+                {uploadedFiles.length > 0 && (
+                  <div className="ai-file-list">
+                    {uploadedFiles.map((file, index) => (
+                      <div key={index} className="ai-file-item">
+                        <span className="ai-file-name">{file.name}</span>
+                        <button
+                          className="ai-file-remove"
+                          onClick={() => handleRemoveFile(index)}
+                          type="button"
+                          aria-label={`Remove ${file.name}`}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                <button
+                  className="btn btn-primary"
+                  onClick={handleFilesReady}
+                  type="button"
+                  disabled={uploadedFiles.length === 0}
+                  aria-label="Continue with uploaded files"
+                >
+                  Continue
+                </button>
+              </div>
+            )}
 
             {/* yes/no & difficulty */}
             {quizStage === "confirm" && (
@@ -329,12 +513,12 @@ export function AiAgentPanel({
             <input
               id="ai-input"
               className="ai-input"
-              placeholder="Ask or chat with your tutor…"
+              placeholder={quizStage === "topic" ? "Enter quiz topic..." : "Ask or chat with your tutor…"}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              disabled={loading}
-              aria-label="Ask a question"
-              aria-describedby={loading ? "ai-loading" : undefined}
+              disabled={loading || uploading}
+              aria-label={quizStage === "topic" ? "Enter quiz topic" : "Ask a question"}
+              aria-describedby={loading || uploading ? "ai-loading" : undefined}
             />
             {loading && (
               <span id="ai-loading" className="sr-only" aria-live="polite">
@@ -344,10 +528,10 @@ export function AiAgentPanel({
             <button 
               className="ai-send" 
               type="submit" 
-              disabled={!input.trim() || loading}
-              aria-label={loading ? "AI is processing" : "Send message"}
+              disabled={!input.trim() || loading || uploading}
+              aria-label={loading || uploading ? "Processing" : "Send message"}
             >
-              <span>{loading ? "..." : "Send"}</span>
+              <span>{loading || uploading ? "..." : quizStage === "topic" ? "Submit" : "Send"}</span>
             </button>
           </form>
         </>

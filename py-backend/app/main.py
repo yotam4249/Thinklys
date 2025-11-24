@@ -11,6 +11,8 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from contextlib import asynccontextmanager
 import json
 import traceback
+import logging
+from datetime import datetime
 
 from app.core.config import settings
 from app.core.db import get_db
@@ -31,6 +33,74 @@ async def lifespan(app: FastAPI):
     # Start quiz response consumer
     from app.api.routes.quiz_routes import start_quiz_response_consumer
     await start_quiz_response_consumer()
+    
+    # Send ping message to RAG server for testing (non-blocking)
+    async def send_startup_ping():
+        """Send ping message to RAG server in background."""
+        import asyncio
+        print("=" * 80)
+        print("[PING-FLOW] 🚀 STARTING PING MESSAGE FLOW")
+        print("=" * 80)
+        print("[PING-FLOW] Step 1: Scheduling ping message to RAG server...")
+        
+        # Small delay to ensure Kafka is ready
+        print("[PING-FLOW] Step 2: Waiting 2 seconds for Kafka to be ready...")
+        await asyncio.sleep(2)
+        print("[PING-FLOW] ✅ Wait complete, proceeding with ping...")
+        
+        from app.services.kafka_service import kafka_service
+        from app.services.kafka_service import new_request_id
+        
+        print("[PING-FLOW] Step 3: Creating ping message...")
+        request_id = new_request_id()
+        ping_message = {
+            "type": "ping",
+            "requestId": request_id,
+            "message": "py-backend startup ping",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        print(f"[PING-FLOW] ✅ Ping message created:")
+        print(f"[PING-FLOW]   RequestId: {request_id}")
+        print(f"[PING-FLOW]   Type: {ping_message['type']}")
+        print(f"[PING-FLOW]   Message: {ping_message['message']}")
+        print(f"[PING-FLOW]   Timestamp: {ping_message['timestamp']}")
+        
+        try:
+            print(f"[PING-FLOW] Step 4: Sending ping to Kafka topic: {settings.KAFKA_TOPIC_QUIZ_REQUEST}")
+            # Run publish in thread pool to avoid blocking async event loop
+            loop = asyncio.get_event_loop()
+            ping_sent = await loop.run_in_executor(
+                None,
+                lambda: kafka_service.publish(
+                    settings.KAFKA_TOPIC_QUIZ_REQUEST,  # Use existing topic
+                    ping_message,
+                    key=ping_message["requestId"]
+                )
+            )
+            
+            if ping_sent:
+                print("=" * 80)
+                print(f"[PING-FLOW] ✅✅✅ PING SUCCESSFULLY SENT TO KAFKA! ✅✅✅")
+                print(f"[PING-FLOW]   RequestId: {request_id}")
+                print(f"[PING-FLOW]   Topic: {settings.KAFKA_TOPIC_QUIZ_REQUEST}")
+                print(f"[PING-FLOW]   Status: Waiting for RAG server to consume...")
+                print("=" * 80)
+            else:
+                print("=" * 80)
+                print("[PING-FLOW] ❌ FAILED TO SEND PING TO KAFKA")
+                print("[PING-FLOW]   Reason: Kafka publish returned False")
+                print("=" * 80)
+        except Exception as e:
+            print("=" * 80)
+            print(f"[PING-FLOW] ❌ EXCEPTION WHILE SENDING PING: {e}")
+            print("=" * 80)
+            import traceback
+            traceback.print_exc()
+    
+    # Start ping in background (don't await - non-blocking)
+    import asyncio
+    task = asyncio.create_task(send_startup_ping())
+    print("[PING] Ping task created, will send in 2 seconds...")
     
     yield
     # Shutdown

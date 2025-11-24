@@ -8,6 +8,7 @@ from app.services.s3_service import (
     get_presigned_get_url,
     generate_s3_key,
     ALLOWED_IMAGE_TYPES,
+    ALLOWED_DOCUMENT_TYPES,
 )
 from app.api.dto.files_dto import (
     PresignUploadDTO,
@@ -63,15 +64,27 @@ async def presign_upload(
     - For 'users/new' prefix: allows unauthenticated access (for registration)
     - For other prefixes: requires authentication
     """
-    # Validate content type
-    if dto.contentType not in ALLOWED_IMAGE_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "INVALID_CONTENT_TYPE"},
-        )
+    # Validate content type based on prefix
+    prefix = dto.prefix or ""
+    is_quiz_file = isinstance(prefix, str) and prefix.startswith("quiz/")
+    
+    if is_quiz_file:
+        # For quiz files, allow document types
+        if dto.contentType not in ALLOWED_DOCUMENT_TYPES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"code": "INVALID_CONTENT_TYPE", "message": f"Document type required for quiz files. Allowed types: {', '.join(ALLOWED_DOCUMENT_TYPES)}"},
+            )
+    else:
+        # For other uploads (like profile images), allow image types
+        if dto.contentType not in ALLOWED_IMAGE_TYPES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"code": "INVALID_CONTENT_TYPE", "message": f"Image type required. Allowed types: {', '.join(ALLOWED_IMAGE_TYPES)}"},
+            )
     
     # Check if authentication is required
-    prefix = dto.prefix or ""
+    # Note: prefix was already extracted above for content type validation
     requires_auth = not (isinstance(prefix, str) and prefix.startswith("users/new"))
     
     if requires_auth and not current_user:

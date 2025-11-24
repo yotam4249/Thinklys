@@ -21,6 +21,9 @@ def signal_handler(sig, frame):
 
 def main():
     """Main entry point for RAG server."""
+    print("=" * 60)
+    print("[RAG-SERVER] 🚀 Starting RAG Quiz Generation Server...")
+    print("=" * 60)
     logger.info("Starting RAG Quiz Generation Server...")
     
     # Register signal handlers
@@ -29,11 +32,15 @@ def main():
     
     try:
         # Create and start quiz consumer
+        print("[RAG-SERVER] Creating QuizConsumer...")
         consumer = QuizConsumer()
+        print("[RAG-SERVER] Starting consumer...")
         consumer.start()
     except KeyboardInterrupt:
+        print("[RAG-SERVER] Server interrupted by user")
         logger.info("Server interrupted by user")
     except Exception as e:
+        print(f"[RAG-SERVER] ❌ Fatal error: {e}")
         logger.error(f"Fatal error: {e}", exc_info=True)
         sys.exit(1)
 

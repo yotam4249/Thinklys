@@ -24,9 +24,38 @@ class QuizConsumer:
     def process_quiz_request(self, message: Dict[str, Any]):
         """Process a quiz generation request."""
         try:
-            logger.info(f"Received quiz request: {message}")
+            print("─" * 80)
+            print(f"[RAG-CONSUMER] 🔔 PROCESSING MESSAGE IN RAG SERVER")
+            print("─" * 80)
+            logger.info(f"Received message: {message}")
             
-            # Extract request data
+            # Check if this is a ping message
+            message_type = message.get("type", "")
+            print(f"[RAG-CONSUMER]   Message type: {message_type}")
+            
+            if message_type == "ping":
+                request_id = message.get("requestId", "unknown")
+                ping_message = message.get("message", "")
+                timestamp = message.get("timestamp", "")
+                
+                print("=" * 80)
+                print("=" * 80)
+                print(f"[RAG-CONSUMER] ✅✅✅✅✅ PING RECEIVED FROM PY-BACKEND! ✅✅✅✅✅")
+                print("=" * 80)
+                print("=" * 80)
+                print(f"[RAG-CONSUMER]   RequestId: {request_id}")
+                print(f"[RAG-CONSUMER]   Message: {ping_message}")
+                print(f"[RAG-CONSUMER]   Timestamp: {timestamp}")
+                print("=" * 80)
+                print(f"[RAG-CONSUMER] ✅✅✅ COMPLETE PING FLOW SUCCESSFUL! ✅✅✅")
+                print(f"[RAG-CONSUMER]   py-backend → Kafka → rag-server")
+                print(f"[RAG-CONSUMER]   Connection between services is working!")
+                print("=" * 80)
+                print("=" * 80)
+                logger.info(f"✅ Received ping from py-backend: requestId={request_id}, message={ping_message}, timestamp={timestamp}")
+                return
+            
+            # Extract request data for quiz generation
             request_id = message.get("requestId")
             topic = message.get("topic", "").strip()
             level = message.get("level", "intermediate").strip()
@@ -116,9 +145,43 @@ class QuizConsumer:
                 )
                 
                 logger.info(f"Quiz generated and sent: requestId={request_id}")
+                
+                # Send completion notification to py-backend
+                completion_message = {
+                    "requestId": request_id,
+                    "type": "quiz_completed",
+                    "status": "success",
+                    "message": "Quiz generation completed successfully"
+                }
+                
+                self.kafka_client.publish(
+                    settings.KAFKA_TOPIC_QUIZ_COMPLETION,
+                    completion_message,
+                    key=request_id
+                )
+                
+                logger.info(f"Completion notification sent: requestId={request_id}")
             except Exception as e:
                 logger.error(f"Error generating quiz: {e}", exc_info=True)
                 self._send_error_response(request_id, f"Error generating quiz: {str(e)}")
+                
+                # Send completion notification with error status
+                completion_message = {
+                    "requestId": request_id,
+                    "type": "quiz_completed",
+                    "status": "error",
+                    "message": f"Quiz generation failed: {str(e)}"
+                }
+                
+                try:
+                    self.kafka_client.publish(
+                        settings.KAFKA_TOPIC_QUIZ_COMPLETION,
+                        completion_message,
+                        key=request_id
+                    )
+                    logger.info(f"Error completion notification sent: requestId={request_id}")
+                except Exception as completion_err:
+                    logger.error(f"Error sending completion notification: {completion_err}", exc_info=True)
         
         except Exception as e:
             logger.error(f"Error processing quiz request: {e}", exc_info=True)
@@ -147,6 +210,9 @@ class QuizConsumer:
     
     def start(self):
         """Start consuming quiz generation requests."""
+        print(f"[RAG-CONSUMER] 🚀 Starting quiz consumer...")
+        print(f"[RAG-CONSUMER]   Topics: {settings.KAFKA_TOPIC_QUIZ_REQUEST}")
+        print(f"[RAG-CONSUMER]   Group ID: {settings.KAFKA_GROUP_ID}")
         logger.info("Starting quiz consumer...")
         
         topics = [settings.KAFKA_TOPIC_QUIZ_REQUEST]
