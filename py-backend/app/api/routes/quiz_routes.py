@@ -6,6 +6,9 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.middleware.auth_middleware import get_current_user
 from app.services.kafka_service import kafka_service, new_request_id
+from app.services.openai_service import generate_openai_quiz, generate_openai_quiz_strict
+from app.services.ai_cache_service import get_cached_quiz, set_cached_quiz
+from app.utils.quiz_utils import coerce_quiz_shape, is_valid_quiz_shape
 from app.core.config import settings
 from app.core.redis import get_redis
 from app.core.db import get_db
@@ -73,40 +76,62 @@ def process_quiz_response(message: Dict[str, Any]):
 async def generate_quiz(
     dto: QuizGenerateRequestDTO,
     background_tasks: BackgroundTasks,
-    current_user: Optional[dict] = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
 ):
     """
-    Generate a quiz using RAG server via Kafka.
-    This endpoint publishes a request to Kafka and waits for the RAG server response.
+    Generate a quiz.
+    - If files are provided: uses RAG server via Kafka
+    - If no files: uses OpenAI directly with caching
     """
+    topic = dto.topic.strip() if dto.topic else ""
+    level = dto.level.strip() if dto.level else ""
+    
+    logger.info(f"[QUIZ] Incoming: topic={topic}, level={level}, has_files={bool(dto.files and len(dto.files) > 0)}")
+    
     # Validate input
-    if not dto.topic or not dto.topic.strip():
+    if not topic:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "BAD_REQUEST", "message": "Topic is required"}
         )
     
-    if not dto.level or not dto.level.strip():
+    if not level:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "BAD_REQUEST", "message": "Level is required"}
         )
     
-    # Check cache first (optional - can use Redis)
-    # Include files in cache key if present to avoid cache collisions
+    # Check if files are provided - if yes, use RAG (Kafka), otherwise use OpenAI
+    has_files = dto.files and len(dto.files) > 0
+    
+    if has_files:
+        # Use RAG server via Kafka (existing logic)
+        return await _generate_quiz_via_rag(dto, topic, level)
+    else:
+        # Use OpenAI directly (new logic)
+        return await _generate_quiz_via_openai(topic, level)
+
+
+async def _generate_quiz_via_rag(
+    dto: QuizGenerateRequestDTO,
+    topic: str,
+    level: str
+) -> QuizGenerateResponseDTO:
+    """Generate quiz using RAG server via Kafka."""
+    # Check cache first (include files in cache key)
     redis_client = await get_redis()
     files_hash = ""
     if dto.files and len(dto.files) > 0:
         import hashlib
         files_str = ",".join(sorted(dto.files))
         files_hash = hashlib.md5(files_str.encode()).hexdigest()[:8]
-    cache_key = f"quiz:{dto.topic}:{dto.level}:{files_hash}" if files_hash else f"quiz:{dto.topic}:{dto.level}"
+    cache_key = f"quiz:{topic}:{level}:{files_hash}" if files_hash else f"quiz:{topic}:{level}"
     cached = await redis_client.get(cache_key)
     
     if cached:
         try:
             quiz_data = json.loads(cached)
-            logger.info(f"Quiz cache hit: {dto.topic}:{dto.level}")
+            logger.info(f"Quiz cache hit: {topic}:{level}")
             return QuizGenerateResponseDTO(
                 success=True,
                 quiz=QuizResponseDTO(**quiz_data),
@@ -121,8 +146,8 @@ async def generate_quiz(
     # Prepare Kafka message
     kafka_message = {
         "requestId": request_id,
-        "topic": dto.topic.strip(),
-        "level": dto.level.strip(),
+        "topic": topic,
+        "level": level,
         "files": dto.files or [],
         "fileTypes": dto.fileTypes or [],
     }
@@ -182,8 +207,8 @@ async def generate_quiz(
     ]
     
     quiz_response = QuizResponseDTO(
-        topic=quiz_data.get("topic", dto.topic),
-        level=quiz_data.get("level", dto.level),
+        topic=quiz_data.get("topic", topic),
+        level=quiz_data.get("level", level),
         items=quiz_items
     )
     
@@ -192,6 +217,94 @@ async def generate_quiz(
         quiz=quiz_response,
         cached=False
     )
+
+
+async def _generate_quiz_via_openai(
+    topic: str,
+    level: str
+) -> QuizGenerateResponseDTO:
+    """Generate quiz using OpenAI directly with caching."""
+    try:
+        # 1) Cache lookup
+        cached = await get_cached_quiz(topic, level)
+        if cached:
+            logger.info("[QUIZ] Cache HIT → returning cached quiz")
+            return QuizGenerateResponseDTO(
+                success=True,
+                quiz=QuizResponseDTO(**cached),
+                cached=True
+            )
+        
+        logger.info("[QUIZ] Cache MISS → calling OpenAI (normal)")
+        
+        # 2) Attempt 1 (normal)
+        json_str = await generate_openai_quiz(topic, level)
+        logger.info(f"[QUIZ] OpenAI (normal) JSON len: {len(json_str) if json_str else 0}")
+        
+        parsed = None
+        try:
+            parsed = json.loads(json_str)
+        except json.JSONDecodeError as e:
+            logger.error(f"[QUIZ] JSON.parse failed (normal): {e}")
+        
+        if parsed:
+            parsed = coerce_quiz_shape(parsed)
+        
+        if not parsed or not is_valid_quiz_shape(parsed):
+            logger.warning("[QUIZ] Shape invalid after normal attempt; retry STRICT")
+            # 3) Attempt 2 (strict)
+            strict_str = await generate_openai_quiz_strict(topic, level)
+            logger.info(f"[QUIZ] OpenAI (strict) JSON len: {len(strict_str) if strict_str else 0}")
+            
+            try:
+                parsed = json.loads(strict_str)
+            except json.JSONDecodeError as e:
+                logger.error(f"[QUIZ] JSON.parse failed (strict): {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail={"error": "openai_bad_json"}
+                )
+            
+            parsed = coerce_quiz_shape(parsed)
+            
+            ok2 = is_valid_quiz_shape(parsed)
+            logger.info(f"[QUIZ] strict shape valid? {ok2}")
+            if not ok2:
+                logger.error(f"[QUIZ] Shape invalid after strict retry; sample: {json.dumps(parsed)[:400] if parsed else 'None'}")
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail={"error": "openai_shape_invalid", "data": parsed}
+                )
+        
+        # 4) Save & return
+        await set_cached_quiz(topic, level, parsed)
+        logger.info("[QUIZ] Saved to cache OK")
+        
+        # Convert to response DTO
+        quiz_items = [
+            QuizItemDTO(**item) for item in parsed.get("items", [])
+        ]
+        
+        quiz_response = QuizResponseDTO(
+            topic=parsed.get("topic", topic),
+            level=parsed.get("level", level),
+            items=quiz_items
+        )
+        
+        return QuizGenerateResponseDTO(
+            success=True,
+            quiz=quiz_response,
+            cached=False
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as err:
+        logger.error(f"[QUIZ] Error: {err}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error": "server_error", "detail": str(err)}
+        )
 
 
 def process_quiz_completion(message: Dict[str, Any]):

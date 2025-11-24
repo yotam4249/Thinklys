@@ -96,18 +96,23 @@ export function AiAgentPanel({
   };
 
   const handleSelectQuizMode = (mode: "files" | "openai") => {
-    if (mode === "openai") {
-      setMessages((p) => [...p, { id: newId(), role: "assistant", content: "OpenAI mode is not yet implemented. Please use files mode." }]);
-      return;
-    }
-    
     setSelectedQuizMode(mode);
-    setMessages((p) => [
-      ...p,
-      { id: newId(), role: "user", content: "Using files" },
-      { id: newId(), role: "assistant", content: "Upload up to 5 files and enter a topic for your quiz." },
-    ]);
-    setQuizStage("files");
+    
+    if (mode === "openai") {
+      setMessages((p) => [
+        ...p,
+        { id: newId(), role: "user", content: "Using OpenAI" },
+        { id: newId(), role: "assistant", content: "What topic would you like the quiz to focus on?" },
+      ]);
+      setQuizStage("topic");
+    } else {
+      setMessages((p) => [
+        ...p,
+        { id: newId(), role: "user", content: "Using files" },
+        { id: newId(), role: "assistant", content: "Upload up to 5 files and enter a topic for your quiz." },
+      ]);
+      setQuizStage("files");
+    }
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -229,7 +234,7 @@ export function AiAgentPanel({
         quiz = result.quiz;
         setUploading(false);
       } else {
-        // Regular quiz generation (OpenAI mode - not implemented yet, fallback to regular)
+        // Regular quiz generation (OpenAI mode)
         const result = await getQuiz(quizTopic, quizLevel);
         quiz = result.quiz;
       }
@@ -382,10 +387,9 @@ export function AiAgentPanel({
                   className="btn" 
                   onClick={() => handleSelectQuizMode("openai")}
                   type="button"
-                  aria-label="Generate quiz using OpenAI (not implemented)"
-                  disabled
+                  aria-label="Generate quiz using OpenAI"
                 >
-                  🤖 Using OpenAI (Coming Soon)
+                  🤖 Using OpenAI
                 </button>
               </div>
             )}

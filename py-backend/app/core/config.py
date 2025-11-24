@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     KAFKA_TOPIC_QUIZ_COMPLETION: str = "quiz.generate.completion"
     KAFKA_TOPIC_PING: str = "rag.ping"
 
+    # OpenAI
+    OPENAI_API_KEY: SecretStr = SecretStr("")
+
     model_config = SettingsConfigDict(
         env_file = ".env.dev",
         extra="ignore"

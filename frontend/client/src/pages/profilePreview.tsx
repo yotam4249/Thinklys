@@ -44,7 +44,8 @@ export default function ProfilePreview() {
         setUser(data.user);
       } catch (err: any) {
         if (cancelled) return;
-        setError(err?.response?.data?.code || "Failed to load profile");
+        const errorCode = err?.response?.data?.code || err?.response?.data?.detail?.code;
+        setError(errorCode || "Failed to load profile");
       } finally {
         if (!cancelled) setLoading(false);
       }

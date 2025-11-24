@@ -236,7 +236,7 @@ async def logout(
     return {"ok": True}
 
 
-@router.get("/me", response_model=UserResponse)
+@router.get("/me")
 async def me(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -258,10 +258,11 @@ async def me(
         except Exception:
             pass  # If presigned URL generation fails, continue without it
 
-    return _user_to_response(user, profile_image_url=profile_image_url)
+    user_response = _user_to_response(user, profile_image_url=profile_image_url)
+    return {"user": user_response}
 
 
-@router.put("/profile", response_model=UserResponse)
+@router.put("/profile")
 async def update_profile(
     dto: UpdateProfileDTO,
     current_user: dict = Depends(get_current_user),
@@ -305,7 +306,8 @@ async def update_profile(
         except Exception:
             pass  # If presigned URL generation fails, continue without it
 
-    return _user_to_response(user, profile_image_url=profile_image_url)
+    user_response = _user_to_response(user, profile_image_url=profile_image_url)
+    return {"user": user_response}
 
 
 @router.put("/password")
@@ -338,7 +340,7 @@ async def update_password(
     return {"success": True}
 
 
-@router.get("/user/{user_id}", response_model=UserResponse)
+@router.get("/user/{user_id}")
 async def get_user_profile(
     user_id: str,
     current_user: dict = Depends(get_current_user),
@@ -368,5 +370,6 @@ async def get_user_profile(
         except Exception:
             pass  # If presigned URL generation fails, continue without it
 
-    return _user_to_response(user, profile_image_url=profile_image_url)
+    user_response = _user_to_response(user, profile_image_url=profile_image_url)
+    return {"user": user_response}
 

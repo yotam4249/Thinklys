@@ -1,7 +1,6 @@
-
 // src/pages/register.tsx
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { Gender } from "../types/user.type";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
@@ -30,9 +29,20 @@ export default function Register() {
   // image state
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   // UI
   const [showPw, setShowPw] = useState(false);
+  const [focusedField, setFocusedField] = useState<string | null>(null);
+
+  // Cleanup preview URL on unmount
+  useEffect(() => {
+    return () => {
+      if (preview) {
+        URL.revokeObjectURL(preview);
+      }
+    };
+  }, [preview]);
 
   // validations
   const usernameError: FieldError = useMemo(() => {
@@ -75,12 +85,25 @@ export default function Register() {
     !passwordError &&
     !dateError &&
     !underage &&
-    !isLoading;
+    !isLoading &&
+    !uploading;
 
   function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0] ?? null;
-    setFile(f);
-    setPreview(f ? URL.createObjectURL(f) : null);
+    if (f) {
+      // Cleanup previous preview
+      if (preview) {
+        URL.revokeObjectURL(preview);
+      }
+      setFile(f);
+      setPreview(URL.createObjectURL(f));
+    } else {
+      if (preview) {
+        URL.revokeObjectURL(preview);
+      }
+      setFile(null);
+      setPreview(null);
+    }
   }
 
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -92,14 +115,21 @@ export default function Register() {
 
     // 1) Upload to S3 first (if a file was chosen)
     if (file) {
-      const contentType = file.type || "image/jpeg";
-      // filename used for nicer keys, not required
-      const { url, key } = await presignUpload(contentType, {
-        filename: username.trim().toLowerCase(),
-        prefix: "users/new",
-      });
-      await uploadViaPresignedPut(url, file, contentType);
-      profileImage = key; // store this on the user
+      setUploading(true);
+      try {
+        const contentType = file.type || "image/jpeg";
+        const { url, key } = await presignUpload(contentType, {
+          filename: username.trim().toLowerCase(),
+          prefix: "users/new",
+        });
+        await uploadViaPresignedPut(url, file, contentType);
+        profileImage = key;
+      } catch (err) {
+        console.error("Failed to upload profile image:", err);
+        setUploading(false);
+        return;
+      }
+      setUploading(false);
     }
 
     // 2) Register with the profileImage key
@@ -110,11 +140,11 @@ export default function Register() {
           password,
           dateOfBirth: dateOfBirth || undefined,
           gender: (gender as Gender) || undefined,
-          profileImage, // send S3 key to backend
+          profileImage,
         })
       ).unwrap();
 
-      // Your flow: go to login (user is not auto-logged-in)
+      // Navigate to login after successful registration
       navigate("/login", { replace: true });
     } catch {
       // Slice handles error state
@@ -129,7 +159,7 @@ export default function Register() {
       <section className="auth-card">
         <div className="visual-pane">
           <span className="visual-badge">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path d="M12 2a10 10 0 100 20 10 10 0 000-20zm1 10h3l-4 6V12H9l4-6v6z" />
             </svg>
             Get started
@@ -147,90 +177,196 @@ export default function Register() {
           </header>
 
           <form onSubmit={onSubmit} noValidate>
-            <label className="auth-label" htmlFor="username">Username</label>
-            <input
-              id="username"
-              className="auth-input"
-              placeholder="choose a username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              autoComplete="username"
-            />
-            {usernameError && <p className="auth-msg">{usernameError}</p>}
-
-            <label className="auth-label" htmlFor="password">Password</label>
-            <div className="auth-input-wrapper">
+            <div className="form-field">
+              <label className="auth-label" htmlFor="username">
+                Username
+                {usernameError && <span className="field-error-indicator" aria-hidden="true"> *</span>}
+              </label>
               <input
-                id="password"
-                className="auth-input"
-                type={showPw ? "text" : "password"}
-                placeholder="at least 6 characters"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="new-password"
+                id="username"
+                className={`auth-input ${usernameError ? "error" : ""} ${focusedField === "username" ? "focused" : ""}`}
+                placeholder="choose a username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                onFocus={() => setFocusedField("username")}
+                onBlur={() => setFocusedField(null)}
+                autoComplete="username"
+                disabled={isLoading || uploading}
+                aria-invalid={usernameError ? "true" : "false"}
+                aria-describedby={usernameError ? "username-error" : undefined}
               />
-              <button
-                type="button"
-                className="pw-toggle-inside"
-                onClick={() => setShowPw((s) => !s)}
-                aria-label="Toggle password visibility"
-              >
-                <img src={showPw ? visibilityOff : visibility} alt="" className="pw-icon" />
-              </button>
+              {usernameError && (
+                <p className="auth-msg" id="username-error" role="alert">
+                  {usernameError}
+                </p>
+              )}
             </div>
-            {passwordError && <p className="auth-msg">{passwordError}</p>}
 
-            <label className="auth-label" htmlFor="dateOfBirth">Date of Birth (optional)</label>
-            <input
-              id="dateOfBirth"
-              type="date"
-              className="auth-input"
-              value={dateOfBirth}
-              onChange={(e) => setDateOfBirth(e.target.value)}
-            />
-            {dateError && <p className="auth-msg">{dateError}</p>}
-
-            <label className="auth-label" htmlFor="gender">Gender (optional)</label>
-            <select
-              id="gender"
-              className="auth-input"
-              value={gender}
-              onChange={(e) => setGender(e.target.value as Gender | "")}
-            >
-              <option value="">Select</option>
-              <option value="male">Male</option>
-              <option value="female">Female</option>
-              <option value="other">Other</option>
-              <option value="prefer_not_to_say">Prefer not to say</option>
-            </select>
-
-            <label className="auth-label" htmlFor="profileImage">Profile image (optional)</label>
-            <input
-              id="profileImage"
-              type="file"
-              accept="image/*"
-              className="auth-input"
-              onChange={onPickFile}
-            />
-            {preview && (
-              <div className="profile-preview-container">
-                <img
-                  src={preview}
-                  alt="preview"
-                  className="profile-preview"
+            <div className="form-field">
+              <label className="auth-label" htmlFor="password">
+                Password
+                {passwordError && <span className="field-error-indicator" aria-hidden="true"> *</span>}
+              </label>
+              <div className="auth-input-wrapper">
+                <input
+                  id="password"
+                  className={`auth-input ${passwordError ? "error" : ""} ${focusedField === "password" ? "focused" : ""}`}
+                  type={showPw ? "text" : "password"}
+                  placeholder="at least 6 characters"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onFocus={() => setFocusedField("password")}
+                  onBlur={() => setFocusedField(null)}
+                  autoComplete="new-password"
+                  disabled={isLoading || uploading}
+                  aria-invalid={passwordError ? "true" : "false"}
+                  aria-describedby={passwordError ? "password-error" : undefined}
                 />
+                <button
+                  type="button"
+                  className="pw-toggle-inside"
+                  onClick={() => setShowPw((s) => !s)}
+                  disabled={isLoading || uploading}
+                  aria-label={showPw ? "Hide password" : "Show password"}
+                  tabIndex={0}
+                >
+                  <img src={showPw ? visibilityOff : visibility} alt="" className="pw-icon" />
+                </button>
               </div>
-            )}
+              {passwordError && (
+                <p className="auth-msg" id="password-error" role="alert">
+                  {passwordError}
+                </p>
+              )}
+            </div>
 
-            <button className="btn-primary" type="submit" disabled={!canSubmit || isLoading}>
-              {isLoading ? "Creating…" : "Create account"}
+            <div className="form-field">
+              <label className="auth-label" htmlFor="dateOfBirth">
+                Date of Birth <span className="optional-label">(optional)</span>
+                {dateError && <span className="field-error-indicator" aria-hidden="true"> *</span>}
+              </label>
+              <input
+                id="dateOfBirth"
+                type="date"
+                className={`auth-input ${dateError ? "error" : ""} ${focusedField === "dateOfBirth" ? "focused" : ""}`}
+                value={dateOfBirth}
+                onChange={(e) => setDateOfBirth(e.target.value)}
+                onFocus={() => setFocusedField("dateOfBirth")}
+                onBlur={() => setFocusedField(null)}
+                disabled={isLoading || uploading}
+                aria-invalid={dateError ? "true" : "false"}
+                aria-describedby={dateError ? "date-error" : undefined}
+              />
+              {dateError && (
+                <p className="auth-msg" id="date-error" role="alert">
+                  {dateError}
+                </p>
+              )}
+            </div>
+
+            <div className="form-field">
+              <label className="auth-label" htmlFor="gender">
+                Gender <span className="optional-label">(optional)</span>
+              </label>
+              <select
+                id="gender"
+                className={`auth-input ${focusedField === "gender" ? "focused" : ""}`}
+                value={gender}
+                onChange={(e) => setGender(e.target.value as Gender | "")}
+                onFocus={() => setFocusedField("gender")}
+                onBlur={() => setFocusedField(null)}
+                disabled={isLoading || uploading}
+              >
+                <option value="">Select gender</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+                <option value="prefer_not_to_say">Prefer not to say</option>
+              </select>
+            </div>
+
+            <div className="form-field">
+              <label className="auth-label" htmlFor="profileImage">
+                Profile image <span className="optional-label">(optional)</span>
+              </label>
+              <input
+                id="profileImage"
+                type="file"
+                accept="image/*"
+                className={`auth-input ${focusedField === "profileImage" ? "focused" : ""}`}
+                onChange={onPickFile}
+                onFocus={() => setFocusedField("profileImage")}
+                onBlur={() => setFocusedField(null)}
+                disabled={isLoading || uploading}
+              />
+              {preview && (
+                <div className="profile-preview-container">
+                  <img
+                    src={preview}
+                    alt="Profile preview"
+                    className="profile-preview"
+                  />
+                  <button
+                    type="button"
+                    className="remove-preview"
+                    onClick={() => {
+                      if (preview) URL.revokeObjectURL(preview);
+                      setFile(null);
+                      setPreview(null);
+                    }}
+                    aria-label="Remove profile image"
+                    disabled={isLoading || uploading}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <button 
+              className="btn-primary" 
+              type="submit" 
+              disabled={!canSubmit || isLoading || uploading}
+              aria-busy={isLoading || uploading}
+            >
+              {isLoading || uploading ? (
+                <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+                  <span className="spinner" style={{ width: "16px", height: "16px", borderWidth: "2px" }} />
+                  {uploading ? "Uploading image…" : "Creating account…"}
+                </span>
+              ) : (
+                "Create account"
+              )}
             </button>
 
             <div className="btn-row">
-              <Link to="/login" className="btn-ghost">Already have an account? Sign in</Link>
+              <Link to="/login" className="btn-ghost">
+                Already have an account? <strong>Sign in</strong>
+              </Link>
             </div>
 
-            {error && <p className="auth-msg" role="alert">{error}</p>}
+            {error && (
+              <div className="auth-msg" role="alert" id="error-message">
+                <svg 
+                  width="16" 
+                  height="16" 
+                  viewBox="0 0 24 24" 
+                  fill="none" 
+                  stroke="currentColor" 
+                  strokeWidth="2"
+                  style={{ marginRight: "8px", flexShrink: 0 }}
+                  aria-hidden="true"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+                <span>{error}</span>
+              </div>
+            )}
           </form>
         </div>
       </section>
