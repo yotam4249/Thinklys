@@ -1,6 +1,6 @@
 # rag/consumers/quiz_consumer.py
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from rag.core.kafka_client import KafkaClient
 from rag.core.config import settings
 from rag.services.vector_store import VectorStore
@@ -9,6 +9,15 @@ from rag.services.file_processor import FileProcessor
 from rag.services.quiz_generator import QuizGenerator
 
 logger = logging.getLogger(__name__)
+
+# Try to import LangChain components (optional)
+try:
+    from rag.services.langchain_vector_store import LangChainVectorStore
+    from rag.services.langchain_quiz_generator import LangChainQuizGenerator
+    LANGCHAIN_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"LangChain not available: {e}. Falling back to pattern-based generator.")
+    LANGCHAIN_AVAILABLE = False
 
 
 class QuizConsumer:
@@ -19,7 +28,42 @@ class QuizConsumer:
         self.vector_store = VectorStore()
         self.embedding_service = EmbeddingService()
         self.file_processor = FileProcessor()
-        self.quiz_generator = QuizGenerator(self.vector_store, self.embedding_service)
+        
+        # Choose generator based on config
+        openai_key = settings.OPENAI_API_KEY.get_secret_value() if settings.OPENAI_API_KEY else ""
+        has_openai_key = bool(openai_key and openai_key.strip())
+        
+        logger.info(f"Generator selection:")
+        logger.info(f"  USE_LANGCHAIN_GENERATOR: {settings.USE_LANGCHAIN_GENERATOR}")
+        logger.info(f"  LANGCHAIN_AVAILABLE: {LANGCHAIN_AVAILABLE}")
+        logger.info(f"  OPENAI_API_KEY set: {has_openai_key}")
+        
+        self.use_langchain = (
+            settings.USE_LANGCHAIN_GENERATOR 
+            and LANGCHAIN_AVAILABLE 
+            and has_openai_key
+        )
+        
+        if self.use_langchain:
+            try:
+                logger.info("🚀 Initializing LangChain RAG quiz generator...")
+                langchain_vector_store = LangChainVectorStore(self.vector_store, self.embedding_service)
+                self.quiz_generator = LangChainQuizGenerator(langchain_vector_store)
+                logger.info("✅ LangChain RAG generator initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize LangChain generator: {e}. Falling back to pattern-based.", exc_info=True)
+                self.use_langchain = False
+                self.quiz_generator = QuizGenerator(self.vector_store, self.embedding_service)
+        else:
+            reason = []
+            if not settings.USE_LANGCHAIN_GENERATOR:
+                reason.append("USE_LANGCHAIN_GENERATOR=false")
+            if not LANGCHAIN_AVAILABLE:
+                reason.append("LangChain not available")
+            if not has_openai_key:
+                reason.append("OPENAI_API_KEY not set")
+            logger.info(f"Using pattern-based quiz generator (no LLM) - Reason: {', '.join(reason)}")
+            self.quiz_generator = QuizGenerator(self.vector_store, self.embedding_service)
     
     def process_quiz_request(self, message: Dict[str, Any]):
         """Process a quiz generation request."""
@@ -129,6 +173,11 @@ class QuizConsumer:
             
             # Generate quiz using RAG
             try:
+                if self.use_langchain:
+                    logger.info(f"[LangChain RAG] Generating quiz with LLM: topic={topic}, level={level}")
+                else:
+                    logger.info(f"[Pattern-based] Generating quiz without LLM: topic={topic}, level={level}")
+                
                 quiz = self.quiz_generator.generate_quiz(topic, level, context_documents)
                 
                 # Send response back via Kafka

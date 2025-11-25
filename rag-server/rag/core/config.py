@@ -33,6 +33,23 @@ class Settings(BaseSettings):
     # Embedding Model
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"  # Lightweight, fast model
     
+    # OpenAI Configuration (for LangChain RAG)
+    OPENAI_API_KEY: SecretStr = SecretStr("")
+    OPENAI_MODEL: str = "gpt-4o-mini"  # Cheapest model: $0.15/$0.60 per 1M tokens
+    OPENAI_TEMPERATURE: float = 0.7
+    
+    # Cost Optimization
+    QUIZ_CACHE_TTL: int = 3600  # Cache quiz results for 1 hour
+    
+    # Generator Selection
+    USE_LANGCHAIN_GENERATOR: bool = True  # Use LangChain RAG (True) or pattern-based (False)
+    
+    # MCP (Model Context Protocol) Configuration
+    ENABLE_MCP: bool = False  # Enable external knowledge sources (Wikipedia, GitHub)
+    ENABLE_WIKIPEDIA: bool = True  # Enable Wikipedia enrichment
+    ENABLE_GITHUB: bool = True  # Enable GitHub enrichment
+    GITHUB_TOKEN: SecretStr = SecretStr("")  # Optional: GitHub token for higher rate limits
+    
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore"
