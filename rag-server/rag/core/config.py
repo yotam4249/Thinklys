@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     
     # Vector Database
     CHROMA_PERSIST_DIR: str = "./chroma_db"
+    CHROMA_DISTANCE_METRIC: str = "cosine"  # Distance metric: cosine, l2, or ip (inner product)
     
     # AWS S3 (for file downloads)
     AWS_REGION: str = ""
@@ -32,6 +33,11 @@ class Settings(BaseSettings):
     
     # Embedding Model
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"  # Lightweight, fast model
+    
+    # Text Chunking Configuration
+    # all-MiniLM-L6-v2 works best with ~256 tokens ≈ 1000 characters
+    TEXT_CHUNK_SIZE: int = 1000  # Target chunk size in characters (~250 tokens)
+    TEXT_CHUNK_OVERLAP: int = 200  # Overlap size in characters (20% of chunk_size)
     
     # OpenAI Configuration (for LangChain RAG)
     OPENAI_API_KEY: SecretStr = SecretStr("")

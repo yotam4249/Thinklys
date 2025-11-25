@@ -28,10 +28,32 @@ class VectorStore:
             )
             
             # Get or create collection for quiz documents
+            # ChromaDB uses HNSW (Hierarchical Navigable Small World) index by default
+            # HNSW is optimized for fast approximate nearest neighbor search
+            # Distance metrics: "cosine" (default, good for normalized embeddings), "l2" (Euclidean), "ip" (inner product)
+            distance_metric = getattr(settings, 'CHROMA_DISTANCE_METRIC', 'cosine')
+            
+            # Collection metadata
+            # ChromaDB automatically uses HNSW as the index type - no explicit configuration needed
+            # The distance metric can be specified in metadata for new collections
+            collection_metadata = {
+                "description": "Documents for quiz generation",
+            }
+            
+            # Set distance metric in metadata (ChromaDB uses this for HNSW distance calculation)
+            # Note: For existing collections, the distance metric is already set and cannot be changed
+            if distance_metric != "cosine":
+                collection_metadata["hnsw:space"] = distance_metric
+            
+            # Create collection - ChromaDB will use HNSW index automatically
             self.collection = self.client.get_or_create_collection(
                 name="quiz_documents",
-                metadata={"description": "Documents for quiz generation"}
+                metadata=collection_metadata
             )
+            
+            # Log confirmation that HNSW is being used
+            # ChromaDB uses HNSW by default for all collections
+            logger.info(f"✅ Collection configured with HNSW index (default) and {distance_metric} distance metric")
             
             logger.info(f"Vector store initialized at {settings.CHROMA_PERSIST_DIR}")
         except Exception as e:

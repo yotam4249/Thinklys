@@ -7,6 +7,7 @@ from rag.services.vector_store import VectorStore
 from rag.services.embedding_service import EmbeddingService
 from rag.services.file_processor import FileProcessor
 from rag.services.quiz_generator import QuizGenerator
+from rag.services.text_chunker import TextChunker
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ class QuizConsumer:
         self.vector_store = VectorStore()
         self.embedding_service = EmbeddingService()
         self.file_processor = FileProcessor()
+        self.text_chunker = TextChunker()
         
         # Choose generator based on config
         openai_key = settings.OPENAI_API_KEY.get_secret_value() if settings.OPENAI_API_KEY else ""
@@ -122,13 +124,19 @@ class QuizConsumer:
             if file_keys and file_types:
                 try:
                     # Download and process files from S3
-                    texts = self.file_processor.process_files_from_s3(file_keys, file_types)
-                    context_documents = texts
+                    raw_texts = self.file_processor.process_files_from_s3(file_keys, file_types)
+                    
+                    # Clean and chunk texts with overlap
+                    logger.info(f"Cleaning and chunking {len(raw_texts)} raw text segments")
+                    chunked_texts = self.text_chunker.chunk_texts(raw_texts)
+                    context_documents = chunked_texts
+                    
+                    logger.info(f"Created {len(chunked_texts)} chunks from {len(raw_texts)} raw segments")
                     
                     # Store documents in vector database
-                    if texts:
-                        # Generate embeddings for documents
-                        embeddings = self.embedding_service.embed_texts(texts)
+                    if chunked_texts:
+                        # Generate embeddings for chunked documents
+                        embeddings = self.embedding_service.embed_texts(chunked_texts)
                         
                         # Ensure embeddings are lists of floats (not tensors)
                         cleaned_embeddings = []
@@ -144,29 +152,38 @@ class QuizConsumer:
                                 import numpy as np
                                 cleaned_embeddings.append([float(x) for x in np.array(emb).tolist()])
                         
-                        # Create metadata
-                        metadatas = [
-                            {
+                        # Create metadata - track which file each chunk came from
+                        # Map chunks back to original files (approximate)
+                        metadatas = []
+                        chunks_per_file = len(chunked_texts) // len(file_keys) if file_keys else 0
+                        for i, chunk in enumerate(chunked_texts):
+                            # Determine which file this chunk likely came from
+                            file_index = min(i // max(chunks_per_file, 1), len(file_keys) - 1) if file_keys else 0
+                            file_key = file_keys[file_index] if file_keys else "unknown"
+                            
+                            metadatas.append({
                                 "topic": topic,
                                 "level": level,
-                                "source": file_key
-                            }
-                            for file_key in file_keys
-                            for _ in range(len(texts) // len(file_keys) + 1)
-                        ][:len(texts)]
+                                "source": file_key,
+                                "chunk_index": i
+                            })
                         
-                        # Create IDs
-                        ids = [f"{topic}_{i}" for i in range(len(texts))]
+                        # Create unique IDs (include requestId, file info, and timestamp to avoid duplicates)
+                        import time
+                        import uuid
+                        timestamp = int(time.time() * 1000)  # milliseconds
+                        unique_suffix = str(uuid.uuid4())[:8]  # Short unique ID
+                        ids = [f"{request_id}_{i}_{timestamp}_{unique_suffix}" for i in range(len(chunked_texts))]
                         
                         # Add to vector store
                         self.vector_store.add_documents(
-                            documents=texts,
+                            documents=chunked_texts,
                             embeddings=cleaned_embeddings,
-                            metadatas=metadatas[:len(texts)],
+                            metadatas=metadatas,
                             ids=ids
                         )
                         
-                        logger.info(f"Stored {len(texts)} document chunks in vector store")
+                        logger.info(f"Stored {len(chunked_texts)} document chunks in vector store (from {len(raw_texts)} raw segments)")
                 except Exception as e:
                     logger.error(f"Error processing files: {e}", exc_info=True)
                     # Continue without files
