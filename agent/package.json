@@ -8,7 +8,8 @@
   },
   "scripts": {
     "dev": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:fetch": "tsx src/data/test-fetch.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "latest",

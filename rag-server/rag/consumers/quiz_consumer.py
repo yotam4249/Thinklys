@@ -107,6 +107,12 @@ class QuizConsumer:
             level = message.get("level", "intermediate").strip()
             file_keys = message.get("files", [])  # List of S3 keys
             file_types = message.get("fileTypes", [])  # List of MIME types
+            user_id = message.get("userId")
+            if not user_id:
+                logger.warning(
+                    "Quiz request missing userId; tagging chunks with '__legacy__'"
+                )
+                user_id = "__legacy__"
             
             if not topic:
                 logger.error("Missing topic in quiz request")
@@ -165,7 +171,8 @@ class QuizConsumer:
                                 "topic": topic,
                                 "level": level,
                                 "source": file_key,
-                                "chunk_index": i
+                                "chunk_index": i,
+                                "user_id": user_id,
                             })
                         
                         # Create unique IDs (include requestId, file info, and timestamp to avoid duplicates)

@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     ENABLE_WIKIPEDIA: bool = True  # Enable Wikipedia enrichment
     ENABLE_GITHUB: bool = True  # Enable GitHub enrichment
     GITHUB_TOKEN: SecretStr = SecretStr("")  # Optional: GitHub token for higher rate limits
+
+    # Internal HTTP API (used by py-backend /api/agent/* endpoints)
+    RAG_HTTP_HOST: str = "127.0.0.1"
+    RAG_HTTP_PORT: int = 9001
+    RAG_INTERNAL_SECRET: SecretStr  # Required; gates all /internal/* endpoints
     
     model_config = SettingsConfigDict(
         env_file=".env",
