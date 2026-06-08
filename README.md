@@ -97,6 +97,90 @@ A distributed backend system featuring AI-powered Q&A and RAG-based quiz generat
 - Semantic similarity search across document corpus
 - Context-aware quiz question generation
 
+## Agent layer (agentic retrieval via MCP)
+
+### What this is
+
+This is **not** a new LLM. It is an agent layer built around Claude (via `@anthropic-ai/sdk`) that uses Claude's **tool use** API to actively query the user's uploaded documents through a custom **MCP server** (`@modelcontextprotocol/sdk`). MCP — the Model Context Protocol — is the open spec for "how a model talks to local tools over JSON-RPC"; we run our server over stdio. The four tools (`search_documents`, `list_documents`, `get_document_section`, `summarize_document`) wrap the existing rag-server vector store under user-scoped HTTP endpoints. The point is to flip Thinklys from passive RAG (one retrieve, then stuff context, then answer) into **agentic retrieval**: the model decides what to look up, in what order, and when it has enough to answer.
+
+### Architecture
+
+```
+                  +-------------------------------+
+  user question ->|  TS agent (Claude tool-use)   |
+                  |  agent/src/agent/loop.ts      |
+                  +---------------+---------------+
+                                  | stdio (JSON-RPC, MCP)
+                                  v
+                  +-------------------------------+
+                  |  Custom MCP server            |
+                  |  agent/src/mcp/server.ts      |
+                  |  Tools:                       |
+                  |   * search_documents          |
+                  |   * list_documents            |
+                  |   * get_document_section      |
+                  |   * summarize_document        |
+                  +---------------+---------------+
+                                  | HTTPS + JWT (Bearer)
+                                  v
+                  +-------------------------------+
+                  |  py-backend  /api/agent/*     |
+                  |  app/api/routes/agent_routes  |
+                  |  JWT auth, user-scoped        |
+                  +---------------+---------------+
+                                  | HTTP + X-Internal-Secret (localhost)
+                                  v
+                  +-------------------------------+
+                  |  rag-server  /internal/agent/*|
+                  |  rag/api.py                   |
+                  |  -> ChromaDB query w/         |
+                  |     where={user_id: ...}      |
+                  |  -> Sentence-Transformers     |
+                  +-------------------------------+
+```
+
+### Demo
+
+The canonical demo question is designed to force at least two tool calls — first discovery, then grounded summarization — so the trace shows the agentic loop rather than a one-shot lookup.
+
+```text
+# example output -- fill in after running `npm run demo`
+
+Question: What do my notes say about transformers, and summarize the document it came from?
+
+-> [step 1] search_documents({ query: "transformers", top_k: 5 })
+       -> 5 chunks (top score 0.83) from demo/notes-on-transformers.pdf
+-> [step 2] summarize_document({ document_id: "demo/notes-on-transformers.pdf", max_chunks: 50 })
+       -> 12 chunks, ~9.2 KB concatenated_text
+-----
+"Your notes describe transformers as ... [grounded answer with citations] ..."
+
+steps=2  tools=[search_documents, summarize_document]  termination=end_turn  tokens_in=...  tokens_out=...
+```
+
+Every live run also writes a structured JSON trace to `agent/runs/<UTC-ISO>.json` (gitignored) with the question, mode, model, final text, termination reason, step count, every tool call (input, output, error, latency), and token usage.
+
+### Design decisions
+
+- **Four intent-shaped tools, not a generic `run_chroma_query`.** Narrow tool surfaces are easier for Claude to use correctly, eliminate vector-query / SQL-shaped injection surface, and let us validate every argument with a zod schema (`agent/src/tools/*.ts`).
+- **User scoping is enforced server-side, not in the model contract.** The TS layer holds exactly one JWT (`THINKLYS_JWT`); no tool takes a `user_id` argument. py-backend pulls `user_id` from `get_current_user` and forwards it; the model cannot escape its own scope.
+- **rag-server stays the only owner of embeddings and ChromaDB.** py-backend never imports the vector store — it talks to rag-server over a localhost HTTP channel gated by `X-Internal-Secret`. This keeps the embedding model loaded in exactly one place.
+- **MCP over stdio.** Stdio is the standard local transport that the MCP Inspector and most MCP clients (Claude Desktop, IDE plugins) speak natively, so the same server we wire into our agent is also testable by hand.
+- **Tool errors come back as `{ isError: true, content: [...] }`.** Our MCP handler in `agent/src/mcp/registerTools.ts` never throws across the JSON-RPC boundary; the agent loop converts that to a `tool_result` with `is_error: true` so Claude can self-correct (retry with different args, fall back to another tool) instead of crashing the run.
+- **The loop appends the assistant's full content array before the tool-result user message.** This is a hard requirement of Claude's API: every `tool_use_id` must be matched by a `tool_result` in the next user turn, otherwise the API rejects the continuation (`agent/src/agent/loop.ts` line ~178).
+- **`console.error` only inside the MCP server process.** Stdout is the JSON-RPC channel; one stray `console.log` corrupts framing and breaks every connected client. This is called out explicitly in `agent/src/mcp/server.ts` and `agent/src/mcp/README.md`.
+
+### What I would do next
+
+- **Stream the loop** with `client.messages.stream` so tokens render as they are produced and the UX matches plain chat latency.
+- **Hybrid retrieval** inside `search_documents` (BM25 fused with dense embeddings) — Chroma-only similarity loses on rare-keyword queries.
+- **Self-correcting agent**: when a `search_documents` call comes back empty or low-score, have Claude rewrite the query and retry before answering "I don't know".
+- **Cheap-judge verifier**: before returning the final answer, run a Haiku-class model over `(answer, retrieved_chunks)` to flag unsupported claims.
+- **Wire the agent into the React UI** behind a feature flag and an A/B switch against the existing top-k RAG path.
+- **Indirect prompt injection hardening**: wrap document text in tool output with delimiters and instruct the model to treat tool output as untrusted data, not instructions — relevant because we feed user-uploaded PDFs straight into the context window.
+
+A long-form version of these decisions lives in [`agent/docs/design-decisions.md`](agent/docs/design-decisions.md). The user-scoping threat model is in [`agent/docs/security-model.md`](agent/docs/security-model.md). The eval plan (Phase 6) is stubbed in [`agent/docs/eval-placeholder.md`](agent/docs/eval-placeholder.md).
+
 ## 🔄 Multi-Server Architecture & Synchronization
 
 ### Horizontal Scaling Design
