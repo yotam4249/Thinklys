@@ -10,7 +10,7 @@ Agentic TypeScript layer for Thinklys. Will expose user-scoped tools over upload
 - [x] Phase 3 — MCP server (stdio) exposing the Phase 2 tools
 - [x] Phase 4a — Claude tool-use loop (mock tools)
 - [x] Phase 4b — Wire the agent loop to the real MCP server over stdio
-- [ ] Phase 5
+- [x] Phase 5 — Documentation: top-level README section, design-decisions, security-model, eval placeholder
 - [ ] Phase 6
 
 ## Quickstart for now
