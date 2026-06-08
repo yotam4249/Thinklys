@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test:fetch": "tsx src/data/test-fetch.ts"
+    "test:fetch": "tsx src/data/test-fetch.ts",
+    "test:tools": "tsx src/tools/test-tools.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "latest",

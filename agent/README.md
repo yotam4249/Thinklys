@@ -6,7 +6,7 @@ Agentic TypeScript layer for Thinklys. Will expose user-scoped tools over upload
 
 - [x] Phase 0 — Scaffold
 - [x] Phase 1 — Data access layer (user-scoped chunks + typed TS client)
-- [ ] Phase 2
+- [x] Phase 2 — Tool functions (typed wrappers over the data-access client)
 - [ ] Phase 3
 - [ ] Phase 4
 - [ ] Phase 5
@@ -40,6 +40,21 @@ End-to-end smoke test of the new data-access pipeline (rag-server HTTP API
 
 The script calls `listDocuments`, `search`, and — if the user has any
 documents — `getSection` and `getChunks`, printing each result.
+
+## How to test Phase 2
+
+Exercises the Phase 2 tool functions (`search_documents`,
+`list_documents`, `get_document_section`, `summarize_document`) through
+their zod input schemas. Requires the same environment as Phase 1
+(`THINKLYS_API_BASE`, `THINKLYS_JWT`, py-backend + rag-server running):
+
+```bash
+cd agent
+npm run test:tools
+```
+
+The script calls each tool through the shared `ToolContext` and prints a
+compact representation of the result for each.
 
 ## Notes on user scoping
 
