@@ -70,3 +70,44 @@ output, error, latency), and token counts. `agent/runs/` is gitignored.
 
 `npm run agent:mock` is preserved for the offline path that does not
 spawn a subprocess.
+
+## Prompt caching (Phase 6)
+
+`loop.ts` enables Anthropic prompt caching on two stable parts of every
+turn:
+
+- **System prompt** — sent as a single
+  `{ type: "text", text: ..., cache_control: { type: "ephemeral" } }`
+  block. The system prompt does not change between turns of a run.
+- **Tool definitions** — `cache_control: { type: "ephemeral" }` is set
+  on the **last** tool in the `tools` array, which (per Anthropic's
+  docs) causes the entire tool block to be cached.
+
+### Expected hit-rate behavior
+
+- **Turn 1 of a run** — these tokens show up under
+  `cache_creation_input_tokens`. You pay the ~25% creation premium
+  once.
+- **Turn 2+ of the same run** — the same tokens move to
+  `cache_read_input_tokens` and are billed at ~10% of the regular
+  input rate. The user's question and the growing tool-result history
+  remain regular `input_tokens`.
+
+Both values are read back from `response.usage`, accumulated in
+`AgentRunResult.cacheReadTokens` / `.cacheCreationTokens`, and
+attached per-step in `ToolCallTrace`. Run-level totals plus a derived
+`cost_usd` are written into every trace JSON. Use `npm run trace --
+runs/<file>.json` to pretty-print one — the header line shows whether
+caching kicked in.
+
+### Tracing
+
+Every trace JSON now carries:
+
+- `trace_id` (UUID v4) — useful when correlating logs.
+- `cost_usd` — derived from token counts using
+  `src/observability/pricing.ts`. The constants in that file carry a
+  "verify before quoting" warning; update them before you cite costs.
+- `cache.cache_read_input_tokens` / `cache.cache_creation_input_tokens`
+  — the same numbers exposed at the top level, mirrored under a
+  `cache` block for ergonomics.

@@ -16,7 +16,9 @@
     "agent:mock": "tsx src/agent/run.ts -- --mock",
     "demo": "tsx src/agent/run.ts \"What do my notes say about transformers, and summarize the document it came from?\"",
     "mcp": "tsx src/mcp/server.ts",
-    "mcp:inspector": "npx @modelcontextprotocol/inspector tsx src/mcp/server.ts"
+    "mcp:inspector": "npx @modelcontextprotocol/inspector tsx src/mcp/server.ts",
+    "eval": "tsx src/eval/runEval.ts",
+    "trace": "tsx src/observability/print-trace.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "latest",

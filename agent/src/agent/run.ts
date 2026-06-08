@@ -1,9 +1,11 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { randomUUID } from "node:crypto";
 import { runAgent } from "./loop.js";
 import { mockTools } from "./mockTools.js";
 import { connectMcpAndBuildTools } from "./mcpTools.js";
 import type { AgentRunResult, AgentTool } from "./types.js";
+import { costFor } from "../observability/pricing.js";
 
 const DEFAULT_QUESTION =
   "What do my notes say about transformers, and summarize the document it came from?";
@@ -50,7 +52,15 @@ async function writeTrace(params: {
   const dir = resolve(process.cwd(), "runs");
   await mkdir(dir, { recursive: true });
   const file = resolve(dir, utcIsoFileName(new Date()));
+  const costUsd = costFor(
+    params.model,
+    params.result.inputTokens,
+    params.result.outputTokens,
+    params.result.cacheReadTokens,
+    params.result.cacheCreationTokens,
+  );
   const trace = {
+    trace_id: randomUUID(),
     question: params.question,
     mode: params.mode,
     model: params.model,
@@ -60,6 +70,13 @@ async function writeTrace(params: {
     toolCalls: params.result.toolCalls,
     inputTokens: params.result.inputTokens,
     outputTokens: params.result.outputTokens,
+    cacheReadTokens: params.result.cacheReadTokens,
+    cacheCreationTokens: params.result.cacheCreationTokens,
+    cost_usd: costUsd,
+    cache: {
+      cache_read_input_tokens: params.result.cacheReadTokens,
+      cache_creation_input_tokens: params.result.cacheCreationTokens,
+    },
   };
   await writeFile(file, JSON.stringify(trace, null, 2), "utf8");
   return file;
@@ -108,7 +125,7 @@ async function main(): Promise<void> {
     const toolsCalled =
       result.toolCalls.map((c) => c.tool).join(", ") || "(none)";
     console.error(
-      `steps=${result.steps} tools=[${toolsCalled}] termination=${result.terminationReason} tokens_in=${result.inputTokens} tokens_out=${result.outputTokens}`,
+      `steps=${result.steps} tools=[${toolsCalled}] termination=${result.terminationReason} tokens_in=${result.inputTokens} tokens_out=${result.outputTokens} cache_read=${result.cacheReadTokens} cache_create=${result.cacheCreationTokens}`,
     );
 
     const tracePath = await writeTrace({

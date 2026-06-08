@@ -46,7 +46,7 @@ type ContentBlock =
 function buildToolDefinitions(
   tools: ReadonlyArray<AgentTool>,
 ): Anthropic.Messages.Tool[] {
-  return tools.map((tool) => {
+  const built = tools.map((tool) => {
     const jsonSchema = zodToJsonSchema(tool.inputSchema, {
       $refStrategy: "none",
       target: "openApi3",
@@ -76,6 +76,18 @@ function buildToolDefinitions(
       input_schema,
     } satisfies Anthropic.Messages.Tool;
   });
+
+  // Phase 6 — prompt caching for tools.
+  // Per Anthropic's docs, attaching `cache_control` to the LAST tool in the
+  // array caches the entire `tools` block. Tool definitions are stable for
+  // the whole run, so this is a free hit on every turn after the first.
+  if (built.length > 0) {
+    const last = built[built.length - 1] as Anthropic.Messages.Tool & {
+      cache_control?: { type: "ephemeral" };
+    };
+    last.cache_control = { type: "ephemeral" };
+  }
+  return built;
 }
 
 function safeStringify(value: unknown): string {
@@ -111,6 +123,28 @@ function extractFinalText(blocks: ReadonlyArray<ContentBlock>): string {
   return parts.join("\n").trim();
 }
 
+interface AnthropicUsageWithCache {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_input_tokens?: number | null;
+  cache_creation_input_tokens?: number | null;
+}
+
+function readCacheTokens(usage: AnthropicUsageWithCache): {
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+} {
+  const cacheReadTokens =
+    typeof usage.cache_read_input_tokens === "number"
+      ? usage.cache_read_input_tokens
+      : 0;
+  const cacheCreationTokens =
+    typeof usage.cache_creation_input_tokens === "number"
+      ? usage.cache_creation_input_tokens
+      : 0;
+  return { cacheReadTokens, cacheCreationTokens };
+}
+
 export async function runAgent(
   question: string,
   tools: ReadonlyArray<AgentTool>,
@@ -129,6 +163,18 @@ export async function runAgent(
   const toolDefinitions = buildToolDefinitions(tools);
   const client = new Anthropic();
 
+  // Phase 6 — prompt caching for the system prompt. We switch from a plain
+  // string to a content-block array so we can mark the last block with
+  // `cache_control: ephemeral`. The system prompt is stable across the
+  // whole run, so we pay creation cost once and read on every later turn.
+  const systemBlocks: Anthropic.Messages.TextBlockParam[] = [
+    {
+      type: "text",
+      text: systemPrompt,
+      cache_control: { type: "ephemeral" },
+    },
+  ];
+
   const messages: Anthropic.Messages.MessageParam[] = [
     { role: "user", content: question },
   ];
@@ -136,6 +182,8 @@ export async function runAgent(
   const toolCalls: ToolCallTrace[] = [];
   let inputTokens = 0;
   let outputTokens = 0;
+  let cacheReadTokensTotal = 0;
+  let cacheCreationTokensTotal = 0;
   let lastText = "";
   let stepsTaken = 0;
 
@@ -147,13 +195,18 @@ export async function runAgent(
     const response = await client.messages.create({
       model,
       max_tokens: maxTokens,
-      system: systemPrompt,
+      system: systemBlocks,
       tools: toolDefinitions,
       messages,
     });
 
     inputTokens += response.usage.input_tokens;
     outputTokens += response.usage.output_tokens;
+    const { cacheReadTokens, cacheCreationTokens } = readCacheTokens(
+      response.usage as unknown as AnthropicUsageWithCache,
+    );
+    cacheReadTokensTotal += cacheReadTokens;
+    cacheCreationTokensTotal += cacheCreationTokens;
 
     const responseContent = response.content as unknown as ContentBlock[];
     const textInThisTurn = extractFinalText(responseContent);
@@ -169,6 +222,8 @@ export async function runAgent(
         terminationReason: mapStopReason(response.stop_reason),
         inputTokens,
         outputTokens,
+        cacheReadTokens: cacheReadTokensTotal,
+        cacheCreationTokens: cacheCreationTokensTotal,
       };
     }
 
@@ -204,6 +259,8 @@ export async function runAgent(
           output: null,
           error: errMsg,
           latencyMs: Date.now() - started,
+          cacheReadTokens,
+          cacheCreationTokens,
         });
         continue;
       }
@@ -224,6 +281,8 @@ export async function runAgent(
           output: null,
           error: errMsg,
           latencyMs: Date.now() - started,
+          cacheReadTokens,
+          cacheCreationTokens,
         });
         continue;
       }
@@ -242,6 +301,8 @@ export async function runAgent(
           input: parseResult.data,
           output,
           latencyMs: Date.now() - started,
+          cacheReadTokens,
+          cacheCreationTokens,
         });
       } catch (err) {
         const message =
@@ -259,6 +320,8 @@ export async function runAgent(
           output: null,
           error: message,
           latencyMs: Date.now() - started,
+          cacheReadTokens,
+          cacheCreationTokens,
         });
       }
     }
@@ -279,6 +342,7 @@ export async function runAgent(
     terminationReason: "max_steps",
     inputTokens,
     outputTokens,
+    cacheReadTokens: cacheReadTokensTotal,
+    cacheCreationTokens: cacheCreationTokensTotal,
   };
 }
-
