@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     # OpenAI
     OPENAI_API_KEY: SecretStr = SecretStr("")
 
+    # Internal RAG HTTP API
+    RAG_INTERNAL_BASE_URL: str = "http://127.0.0.1:9001"
+    RAG_INTERNAL_SECRET: SecretStr = SecretStr("")
+
     model_config = SettingsConfigDict(
         env_file = ".env.dev",
         extra="ignore"

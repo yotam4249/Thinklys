@@ -106,7 +106,7 @@ async def generate_quiz(
     
     if has_files:
         # Use RAG server via Kafka (existing logic)
-        return await _generate_quiz_via_rag(dto, topic, level)
+        return await _generate_quiz_via_rag(dto, topic, level, current_user)
     else:
         # Use OpenAI directly (new logic)
         return await _generate_quiz_via_openai(topic, level)
@@ -115,7 +115,8 @@ async def generate_quiz(
 async def _generate_quiz_via_rag(
     dto: QuizGenerateRequestDTO,
     topic: str,
-    level: str
+    level: str,
+    current_user: dict,
 ) -> QuizGenerateResponseDTO:
     """Generate quiz using RAG server via Kafka."""
     # Check cache first (include files in cache key)
@@ -150,6 +151,7 @@ async def _generate_quiz_via_rag(
         "level": level,
         "files": dto.files or [],
         "fileTypes": dto.fileTypes or [],
+        "userId": current_user.get("id"),
     }
     
     # Publish to Kafka
