@@ -9,7 +9,7 @@ Agentic TypeScript layer for Thinklys. Will expose user-scoped tools over upload
 - [x] Phase 2 — Tool functions (typed wrappers over the data-access client)
 - [x] Phase 3 — MCP server (stdio) exposing the Phase 2 tools
 - [x] Phase 4a — Claude tool-use loop (mock tools)
-- [ ] Phase 4b
+- [x] Phase 4b — Wire the agent loop to the real MCP server over stdio
 - [ ] Phase 5
 - [ ] Phase 6
 
@@ -90,6 +90,48 @@ npm run agent:mock -- "What do my notes say about transformers, and summarize th
 The CLI prints each tool call in order, the final answer text, and a
 summary line (steps, tools called, termination reason, token usage).
 See `src/agent/README.md` for the loop pseudocode and notes.
+
+## How to test Phase 4b
+
+Phase 4b drops the mock tools and drives the same Claude tool-use loop
+against the **real** MCP server (Phase 3) over stdio. The agent CLI
+spawns `src/mcp/server.ts` as a subprocess, lists its tools via the MCP
+TS SDK client, and adapts each one into an `AgentTool` for `runAgent`.
+
+Required env (same `.env` as before):
+
+- `ANTHROPIC_API_KEY`
+- `THINKLYS_API_BASE` (e.g. `http://localhost:8000`)
+- `THINKLYS_JWT` (a fresh access token for a user who has uploaded
+  documents)
+- Optional: `MCP_SERVER_COMMAND`, `MCP_SERVER_ARGS` to point at a
+  different MCP entrypoint.
+
+Prerequisite: `py-backend` and `rag-server` are running (same setup as
+Phase 1). Then:
+
+```bash
+cd agent
+npm install
+npm run demo
+```
+
+The canonical demo question is *"What do my notes say about
+transformers, and summarize the document it came from?"* — it is
+designed to force at least two tool calls: first `search_documents` to
+discover which document mentions the topic, then `summarize_document`
+on the surfaced `document_id`. This exercises the agentic retrieval
+narrative (discovery → grounded summarization) rather than a one-shot
+top-k lookup.
+
+Every live run also writes a structured trace to
+`agent/runs/<UTC-ISO>.json` (gitignored) containing the question, mode,
+model, final text, termination reason, step count, every tool call
+(input, output, error, latency), and token counts. The CLI prints the
+trace path at the end.
+
+To run the offline mock path without spawning the MCP server, use
+`npm run agent:mock`.
 
 ## Notes on user scoping
 
