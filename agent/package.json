@@ -10,12 +10,15 @@
     "dev": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "test:fetch": "tsx src/data/test-fetch.ts",
-    "test:tools": "tsx src/tools/test-tools.ts"
+    "test:tools": "tsx src/tools/test-tools.ts",
+    "mcp": "tsx src/mcp/server.ts",
+    "mcp:inspector": "npx @modelcontextprotocol/inspector tsx src/mcp/server.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "latest",
     "@anthropic-ai/sdk": "latest",
-    "zod": "latest"
+    "zod": "latest",
+    "zod-to-json-schema": "latest"
   },
   "devDependencies": {
     "typescript": "latest",
