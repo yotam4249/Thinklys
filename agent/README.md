@@ -11,7 +11,7 @@ Agentic TypeScript layer for Thinklys. Will expose user-scoped tools over upload
 - [x] Phase 4a — Claude tool-use loop (mock tools)
 - [x] Phase 4b — Wire the agent loop to the real MCP server over stdio
 - [x] Phase 5 — Documentation: top-level README section, design-decisions, security-model, eval placeholder
-- [ ] Phase 6
+- [x] Phase 6 — Eval harness, observability, prompt caching
 
 ## Quickstart for now
 
@@ -132,6 +132,47 @@ trace path at the end.
 
 To run the offline mock path without spawning the MCP server, use
 `npm run agent:mock`.
+
+## How to test Phase 6
+
+Phase 6 adds three things on top of the agent loop:
+
+1. An **evaluation harness** that runs each Q&A pair through both a
+   plain top-k RAG baseline and the full agent loop, then uses
+   `claude-haiku-4-5-20251001` as an LLM-as-judge for correctness and
+   groundedness.
+2. **Tracing/observability** — every agent run now writes a
+   `trace_id` (UUID v4), per-step cache stats, and a `cost_usd` field
+   derived from the public token prices in
+   `src/observability/pricing.ts`.
+3. **Prompt caching** on the system prompt and tool definitions in
+   `src/agent/loop.ts`. See `src/agent/README.md` for what is cached
+   and the expected hit-rate behavior.
+
+Steps:
+
+1. Edit `eval/dataset.example.jsonl` to use your own questions over your
+   own documents (or write a new file and pass it as the first CLI arg).
+2. With `py-backend` and `rag-server` running and the env set up
+   (`THINKLYS_API_BASE`, `THINKLYS_JWT`, `ANTHROPIC_API_KEY`):
+
+   ```bash
+   cd agent
+   npm install
+   npm run eval
+   ```
+
+3. The script prints a Markdown comparison table and writes
+   `agent/eval/results/<UTC-ISO>.json`.
+
+Pretty-print any agent trace JSON with:
+
+```bash
+npm run trace -- runs/<file>.json
+```
+
+See `eval/README.md` for the dataset format, judge limitations, and
+debugging a single case.
 
 ## Notes on user scoping
 
