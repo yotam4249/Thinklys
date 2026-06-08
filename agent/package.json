@@ -11,6 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test:fetch": "tsx src/data/test-fetch.ts",
     "test:tools": "tsx src/tools/test-tools.ts",
+    "agent": "tsx src/agent/run.ts",
+    "agent:mock": "tsx src/agent/run.ts",
     "mcp": "tsx src/mcp/server.ts",
     "mcp:inspector": "npx @modelcontextprotocol/inspector tsx src/mcp/server.ts"
   },

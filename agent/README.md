@@ -8,7 +8,8 @@ Agentic TypeScript layer for Thinklys. Will expose user-scoped tools over upload
 - [x] Phase 1 — Data access layer (user-scoped chunks + typed TS client)
 - [x] Phase 2 — Tool functions (typed wrappers over the data-access client)
 - [x] Phase 3 — MCP server (stdio) exposing the Phase 2 tools
-- [ ] Phase 4
+- [x] Phase 4a — Claude tool-use loop (mock tools)
+- [ ] Phase 4b
 - [ ] Phase 5
 - [ ] Phase 6
 
@@ -71,6 +72,24 @@ npm run mcp:inspector
 Then connect from the MCP Inspector UI and verify the four tools
 (`search_documents`, `list_documents`, `get_document_section`,
 `summarize_document`) are listed and callable.
+
+## How to test Phase 4a
+
+Runs the Claude tool-use loop against the in-process mock tools (no
+backend or MCP server required). Requires only `ANTHROPIC_API_KEY` in
+`.env`:
+
+```bash
+cd agent
+npm install
+cp .env.example .env
+# Set ANTHROPIC_API_KEY=...
+npm run agent:mock -- "What do my notes say about transformers, and summarize the document it came from?"
+```
+
+The CLI prints each tool call in order, the final answer text, and a
+summary line (steps, tools called, termination reason, token usage).
+See `src/agent/README.md` for the loop pseudocode and notes.
 
 ## Notes on user scoping
 
