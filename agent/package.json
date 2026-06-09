@@ -19,6 +19,7 @@
     "mcp:inspector": "npx @modelcontextprotocol/inspector tsx src/mcp/server.ts",
     "eval": "tsx src/eval/runEval.ts",
     "eval:list": "tsx src/eval/listRuns.ts",
+    "eval:compare": "tsx src/eval/compareRuns.ts",
     "trace": "tsx src/observability/print-trace.ts"
   },
   "dependencies": {
