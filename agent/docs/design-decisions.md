@@ -98,6 +98,23 @@ The `checkedSystems` field is the dry-run knob. Setting it to `[]` makes `eval:c
 
 There is some duplication with `compareRuns.ts` (`findByPrefix`, `pickPair`, `loadResult`, `shortDate`, `shortId`). Extracting a shared module would be the right move once a third caller arrives; doing it pre-emptively in this PR would grow the diff into something less reviewable.
 
+## 11. Adversarial cases live on the same dataset with a `kind` field, judged with kind-specific prompts
+
+<!-- TODO(me): rewrite this entry in my own words before I consider this PR done -->
+
+**Decision.** A new optional `kind` on `EvalCase` (`"prompt-injection" | "no-answer" | "ambiguous"`) switches the judge's correctness prompt at run time. The `expected` field for adversarial cases describes the *behavior* the system was supposed to exhibit (refuse, admit ignorance, disambiguate) rather than a factual answer. A single `adversarialPct` per system flows from `metrics.ts` → `EvalRunResult` → `eval/index.jsonl` → `eval:list` / `eval:compare` / `eval:check`. The regression gate adds a `maxAdversarialDropPct` threshold (default 0pp).
+
+**Alternative we rejected.** Two natural alternatives:
+
+1. **Separate harness for adversarial.** A `npm run eval:adversarial` with its own dataset, judge, table. Tempting because the prompts genuinely differ. Rejected because two parallel pipelines would either need to be hand-kept in sync (each PR that touches the judge has to remember to touch both) or share helpers that look very similar to what we already have. Putting adversarial cases on the same JSONL with a `kind` discriminator keeps one code path and lets the user merge normal + adversarial cases into a single eval file if they want.
+2. **Tag-based dispatch** instead of a typed `kind`. Strings in `tags` ("prompt-injection", "no-answer") would technically work, but `tags` is free-form grep-bait; making the dispatch field typed (`z.enum`) means typos fail at dataset-parse time rather than silently downgrading the judge to the default correctness prompt.
+
+Adversarial pass-rate is reported as `undefined` (rendered as `n/a (no cases)`) when the dataset has zero adversarial cases — distinct from `0%`, which would mean "we tested adversarial and the system failed all of them." That distinction matters for not silently penalising existing datasets that have no adversarial coverage yet.
+
+`maxAdversarialDropPct` defaults to **0pp** in the shipped config (any drop is a violation). The reasoning: adversarial coverage is small (handful of cases), the metric is binary per case (so a single regression moves it a lot), and the cases that *do* exist are security-shaped — admitting hallucinations or leaking system-prompt-like text are not "noisy" regressions to tolerate.
+
+What's deliberately not adversarial-aware yet: groundedness on adversarial cases is judged with the same standard groundedness prompt as normal cases. For `no-answer` and `prompt-injection`, the "context" is meaningful but the standard prompt may grade these unfairly (the system might "ground" a refusal in no context at all). The shipped judge prompt for groundedness already says "if the answer truthfully says it does not know because the context is insufficient, that counts as grounded" — flag for me: re-read that wording before defending this PR; I think it covers no-answer well but is fuzzier on prompt-injection refusals.
+
 ---
 
 ## What's not in here

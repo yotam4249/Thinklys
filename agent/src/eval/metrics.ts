@@ -1,4 +1,5 @@
 import type {
+  EvalCase,
   Judgement,
   SystemAggregate,
   SystemName,
@@ -21,6 +22,7 @@ function aggregateOne(
   system: SystemName,
   runs: ReadonlyArray<SystemRun>,
   judgements: ReadonlyArray<Judgement>,
+  adversarialCaseIds: ReadonlySet<string>,
 ): SystemAggregate {
   const filteredRuns = runs.filter((r) => r.system === system && !r.error);
   const filteredJudgements = judgements.filter((j) => j.system === system);
@@ -30,7 +32,13 @@ function aggregateOne(
 
   const totalCostUsd = filteredRuns.reduce((acc, r) => acc + r.costUsd, 0);
 
-  return {
+  const adversarialJudgements = filteredJudgements.filter((j) =>
+    adversarialCaseIds.has(j.caseId),
+  );
+  const adversarialCount = adversarialJudgements.length;
+  const adversarialCorrect = adversarialJudgements.filter((j) => j.correct).length;
+
+  const base: SystemAggregate = {
     correctnessPct: pct(correctCount, filteredJudgements.length),
     groundednessPct: pct(groundedCount, filteredJudgements.length),
     meanInputTokens: mean(filteredRuns.map((r) => r.inputTokens)),
@@ -40,15 +48,30 @@ function aggregateOne(
     meanToolCalls: mean(filteredRuns.map((r) => r.toolCalls)),
     totalCostUsd,
   };
+  if (adversarialCount > 0) {
+    base.adversarialPct = pct(adversarialCorrect, adversarialCount);
+    base.adversarialCount = adversarialCount;
+  }
+  return base;
+}
+
+function buildAdversarialIdSet(cases: ReadonlyArray<EvalCase>): Set<string> {
+  const out = new Set<string>();
+  for (const c of cases) {
+    if (c.kind !== undefined) out.add(c.id);
+  }
+  return out;
 }
 
 export function aggregate(
   runs: ReadonlyArray<SystemRun>,
   judgements: ReadonlyArray<Judgement>,
+  cases: ReadonlyArray<EvalCase>,
 ): { baseline: SystemAggregate; agent: SystemAggregate } {
+  const adversarialIds = buildAdversarialIdSet(cases);
   return {
-    baseline: aggregateOne("baseline", runs, judgements),
-    agent: aggregateOne("agent", runs, judgements),
+    baseline: aggregateOne("baseline", runs, judgements, adversarialIds),
+    agent: aggregateOne("agent", runs, judgements, adversarialIds),
   };
 }
 
@@ -64,6 +87,13 @@ function fmtUsd(n: number): string {
   return `$${n.toFixed(4)}`;
 }
 
+function fmtAdv(agg: SystemAggregate): string {
+  if (agg.adversarialPct === undefined || agg.adversarialCount === undefined) {
+    return "n/a (no cases)";
+  }
+  return `${agg.adversarialPct.toFixed(1)}% (n=${agg.adversarialCount})`;
+}
+
 export function renderMarkdownTable(agg: {
   baseline: SystemAggregate;
   agent: SystemAggregate;
@@ -73,6 +103,7 @@ export function renderMarkdownTable(agg: {
   const rows: Array<[string, string, string]> = [
     ["Correctness", fmtPct(b.correctnessPct), fmtPct(a.correctnessPct)],
     ["Groundedness", fmtPct(b.groundednessPct), fmtPct(a.groundednessPct)],
+    ["Adversarial pass-rate", fmtAdv(b), fmtAdv(a)],
     [
       "Mean tool calls / Q",
       fmtNum(b.meanToolCalls, 2),

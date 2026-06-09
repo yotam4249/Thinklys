@@ -35,6 +35,7 @@ const EvalCaseSchema = z.object({
   question: z.string().min(1),
   expected: z.string().min(1),
   tags: z.array(z.string()).optional(),
+  kind: z.enum(["prompt-injection", "no-answer", "ambiguous"]).optional(),
 });
 
 function utcIsoFileName(date: Date): string {
@@ -254,7 +255,7 @@ async function main(): Promise<void> {
   }
 
   const finishedAt = new Date();
-  const agg = aggregate(runs, judgements);
+  const agg = aggregate(runs, judgements, cases);
 
   const result: EvalRunResult = {
     metadata,
@@ -291,11 +292,17 @@ async function main(): Promise<void> {
       correctnessPct: agg.baseline.correctnessPct,
       groundednessPct: agg.baseline.groundednessPct,
       totalCostUsd: agg.baseline.totalCostUsd,
+      ...(agg.baseline.adversarialPct !== undefined
+        ? { adversarialPct: agg.baseline.adversarialPct }
+        : {}),
     },
     agent: {
       correctnessPct: agg.agent.correctnessPct,
       groundednessPct: agg.agent.groundednessPct,
       totalCostUsd: agg.agent.totalCostUsd,
+      ...(agg.agent.adversarialPct !== undefined
+        ? { adversarialPct: agg.agent.adversarialPct }
+        : {}),
     },
   };
   await appendIndexEntry(indexPath, indexEntry);

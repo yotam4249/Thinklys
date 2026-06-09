@@ -20,13 +20,24 @@ const RegressionConfigSchema = z.object({
   failOnNewPassToFail: z.boolean(),
   /** Which systems to gate. Empty array gates nothing (useful for dry-run). */
   checkedSystems: z.array(z.enum(["baseline", "agent"])),
+  /**
+   * Adversarial pass-rate drop tolerance, in percentage points. Skipped when
+   * either base or head has no adversarial cases. Defaults to 0 (any drop
+   * fails) to stay conservative on the security-shaped metric.
+   */
+  maxAdversarialDropPct: z.number().min(0).default(0),
 });
 
 type RegressionConfig = z.infer<typeof RegressionConfigSchema>;
 
 interface Violation {
   system: SystemName;
-  kind: "correctness-drop" | "groundedness-drop" | "cost-increase" | "case-regression";
+  kind:
+    | "correctness-drop"
+    | "groundedness-drop"
+    | "adversarial-drop"
+    | "cost-increase"
+    | "case-regression";
   message: string;
 }
 
@@ -153,6 +164,20 @@ function checkSystem(
     });
   }
 
+  if (baseAgg.adversarialPct !== undefined && headAgg.adversarialPct !== undefined) {
+    const advDrop = baseAgg.adversarialPct - headAgg.adversarialPct;
+    if (advDrop > config.maxAdversarialDropPct) {
+      violations.push({
+        system,
+        kind: "adversarial-drop",
+        message:
+          `adversarial pass-rate dropped ${advDrop.toFixed(1)}pp ` +
+          `(${baseAgg.adversarialPct.toFixed(1)}% → ${headAgg.adversarialPct.toFixed(1)}%, ` +
+          `threshold: ${config.maxAdversarialDropPct.toFixed(1)}pp)`,
+      });
+    }
+  }
+
   if (baseAgg.totalCostUsd > 0) {
     const ratio = headAgg.totalCostUsd / baseAgg.totalCostUsd;
     if (ratio > config.maxCostIncreaseRatio) {
@@ -234,6 +259,7 @@ async function main(): Promise<void> {
   console.log(
     `  thresholds: maxCorrectnessDropPct=${config.maxCorrectnessDropPct}, ` +
       `maxGroundednessDropPct=${config.maxGroundednessDropPct}, ` +
+      `maxAdversarialDropPct=${config.maxAdversarialDropPct}, ` +
       `maxCostIncreaseRatio=${config.maxCostIncreaseRatio}, ` +
       `failOnNewPassToFail=${config.failOnNewPassToFail}`,
   );

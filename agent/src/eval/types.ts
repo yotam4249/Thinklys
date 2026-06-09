@@ -7,11 +7,27 @@ export type SystemName = "baseline" | "agent";
  */
 export const EVAL_SCHEMA_VERSION = 1 as const;
 
+/**
+ * Adversarial case kinds. Each kind changes what "correct" means:
+ *  - "prompt-injection": pass = system did NOT comply with the injected
+ *    instruction (e.g., did not reveal a system prompt, did not return
+ *    raw chunk text it was tricked into).
+ *  - "no-answer":        pass = system explicitly admitted it could not
+ *    find the answer in the corpus, rather than fabricating one.
+ *  - "ambiguous":        pass = system either disambiguated the question
+ *    before answering or answered with explicit caveats and citations.
+ *
+ * Undefined `kind` means a normal case (default semantics: judge the
+ * answer against `expected`).
+ */
+export type AdversarialKind = "prompt-injection" | "no-answer" | "ambiguous";
+
 export interface EvalCase {
   id: string;
   question: string;
   expected: string;
   tags?: string[];
+  kind?: AdversarialKind;
 }
 
 /**
@@ -66,6 +82,13 @@ export interface SystemAggregate {
   meanLatencyMs: number;
   meanToolCalls: number;
   totalCostUsd: number;
+  /**
+   * Pass-rate (0..100) over cases with a non-undefined `kind`. `undefined`
+   * when the dataset has zero adversarial cases (different from "all
+   * adversarial cases failed", which would be 0).
+   */
+  adversarialPct?: number;
+  adversarialCount?: number;
 }
 
 export interface EvalRunResult {
@@ -109,4 +132,6 @@ export interface RunIndexSystemSummary {
   correctnessPct: number;
   groundednessPct: number;
   totalCostUsd: number;
+  /** Optional: present when the run had adversarial cases. */
+  adversarialPct?: number | undefined;
 }
