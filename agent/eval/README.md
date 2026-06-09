@@ -106,7 +106,44 @@ order. Different `datasetHash` between the two runs prints a stderr
 warning but does not block.
 
 The regression-gate command that consumes these deltas with policy
-thresholds lives in PR 3 (`npm run eval:check`).
+thresholds is `npm run eval:check` — see the next section.
+
+## Regression gate
+
+```bash
+npm run eval:check                          # newest vs previous on same dataset
+npm run eval:check -- <baseId> <headId>     # explicit pair
+```
+
+Reads policy from `eval/regression-config.json` (committed) and exits
+non-zero if any threshold is breached. Config shape:
+
+```json
+{
+  "maxCorrectnessDropPct": 5,
+  "maxGroundednessDropPct": 5,
+  "maxCostIncreaseRatio": 1.5,
+  "failOnNewPassToFail": true,
+  "checkedSystems": ["agent"]
+}
+```
+
+- `maxCorrectnessDropPct` / `maxGroundednessDropPct` — percentage
+  points (not relative). `33.3% → 28.0%` is a drop of 5.3pp.
+- `maxCostIncreaseRatio` — head total cost ÷ base total cost. `1.5`
+  allows up to a 50% cost increase per run.
+- `failOnNewPassToFail` — if true, any case that was correct in base
+  and incorrect in head is a violation (named in the output).
+- `checkedSystems` — subset of `["baseline", "agent"]`. Set it to
+  `[]` for a dry-run that always exits 0.
+
+Unlike `eval:compare`, `eval:check` *refuses* (non-zero exit) when
+base and head ran on different datasets. Aggregate-level comparisons
+across different datasets are exactly the kind of footgun the gate
+exists to prevent.
+
+Wiring it into CI is intentionally out of scope for this PR; what
+exists is the CLI and an exit code.
 
 ## Interpreting the table
 

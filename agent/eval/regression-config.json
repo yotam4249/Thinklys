@@ -1,0 +1,8 @@
+{
+  "$comment": "Edited by hand. Read by `npm run eval:check`. Loose-but-not-paranoid defaults.",
+  "maxCorrectnessDropPct": 5,
+  "maxGroundednessDropPct": 5,
+  "maxCostIncreaseRatio": 1.5,
+  "failOnNewPassToFail": true,
+  "checkedSystems": ["agent"]
+}

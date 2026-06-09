@@ -84,6 +84,20 @@ Separating them keeps `compare` honest as an observability tool: it never lies a
 
 Default pair-picking (newest two runs with matching `datasetHash`) is the right default because comparing across different datasets is rarely meaningful — but the explicit two-arg form lets me override it when I want to look at, say, an old branch vs. main. The mismatched-dataset case prints a stderr warning rather than refusing, because there are legitimate "I changed the dataset, did the agent still look sane on the overlapping cases?" moments.
 
+## 10. Regression policy lives in a committed JSON file, not in CLI flags
+
+<!-- TODO(me): rewrite this entry in my own words before I consider this PR done -->
+
+**Decision.** `npm run eval:check` reads thresholds from `agent/eval/regression-config.json` (committed) and exits non-zero if any are breached. The config carries: `maxCorrectnessDropPct` (percentage points, not relative), `maxGroundednessDropPct`, `maxCostIncreaseRatio` (head/base, e.g. 1.5× allowed), `failOnNewPassToFail` (per-case correct→incorrect triggers a violation), and `checkedSystems` (subset of `["baseline", "agent"]` — empty = dry-run).
+
+**Alternative we rejected.** Encoding the policy on the command line (`--max-corr-drop 5 --max-cost-ratio 1.5 ...`). That requires every CI invocation to repeat the flags, every developer running locally to remember them, and there is no single source of truth for "what does this project consider a regression". Encoding it in a committed file means the policy itself shows up in `git log` and PR diffs — changes to it are reviewable.
+
+The `checkedSystems` field is the dry-run knob. Setting it to `[]` makes `eval:check` always exit 0 with a clear "no systems configured to gate" message, which is the right behaviour while the dataset is still small and the numbers are still noisy. The PR sets it to `["agent"]` by default so the gate watches the system we ship; the baseline is the control and we generally do not block on its variance.
+
+**Refusal vs. warning on dataset mismatch.** `eval:compare` *warns* and proceeds — it's a human reading the table. `eval:check` *refuses* with a non-zero exit — comparing aggregates across different datasets is exactly the kind of footgun a regression gate must avoid by construction.
+
+There is some duplication with `compareRuns.ts` (`findByPrefix`, `pickPair`, `loadResult`, `shortDate`, `shortId`). Extracting a shared module would be the right move once a third caller arrives; doing it pre-emptively in this PR would grow the diff into something less reviewable.
+
 ---
 
 ## What's not in here
