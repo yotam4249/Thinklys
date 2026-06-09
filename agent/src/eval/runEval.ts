@@ -295,6 +295,9 @@ async function main(): Promise<void> {
       ...(agg.baseline.adversarialPct !== undefined
         ? { adversarialPct: agg.baseline.adversarialPct }
         : {}),
+      ...(agg.baseline.multihopPct !== undefined
+        ? { multihopPct: agg.baseline.multihopPct }
+        : {}),
     },
     agent: {
       correctnessPct: agg.agent.correctnessPct,
@@ -302,6 +305,9 @@ async function main(): Promise<void> {
       totalCostUsd: agg.agent.totalCostUsd,
       ...(agg.agent.adversarialPct !== undefined
         ? { adversarialPct: agg.agent.adversarialPct }
+        : {}),
+      ...(agg.agent.multihopPct !== undefined
+        ? { multihopPct: agg.agent.multihopPct }
         : {}),
     },
   };

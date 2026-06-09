@@ -77,6 +77,26 @@ A seed dataset lives at `eval/dataset.adversarial.example.jsonl`.
 Either run it standalone (`npm run eval eval/dataset.adversarial.example.jsonl`)
 or merge its lines into your main dataset.
 
+## Multi-hop cases
+
+A case tagged `"multihop"` is one that genuinely requires two-plus
+retrievals across different documents (or two-plus distinct tool
+calls) to answer correctly. Unlike adversarial cases, multi-hop is a
+**property tag**, not a `kind`: the judge grades the answer against
+`expected` the same way it does for normal cases. Multi-hop just
+isolates a harder subset for measurement.
+
+The eval table reports a **multi-hop pass-rate** row per system (or
+`n/a (no cases)` when the dataset has none). The same metric flows
+into `eval/index.jsonl` as `multihopPct`, so `eval:list` and
+`eval:compare` surface it, and `eval:check` gates on it via
+`maxMultihopDropPct` (defaults to 5pp — a touch wider than the other
+slices because the dataset is small and per-case jitter is real).
+
+Seed dataset at `eval/dataset.multihop.example.jsonl`. This is the
+slice the planner-executor PR (`agent-12`) has to improve on relative
+to the single-agent baseline.
+
 ## Running
 
 ```bash
