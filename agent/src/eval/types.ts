@@ -1,11 +1,16 @@
-export type SystemName = "baseline" | "agent";
+export type SystemName = "baseline" | "agent" | "planner-executor";
 
 /**
  * Bump when EvalRunResult or RunIndexEntry change shape. Older files keep
  * working as long as readers branch on this field; we never silently
  * reinterpret a different shape.
+ *
+ * v1 → v2: added "planner-executor" as a third system. Aggregate and
+ *          RunIndexEntry gain an optional `plannerExecutor` summary;
+ *          readers treat absence as "this system was not run".
  */
-export const EVAL_SCHEMA_VERSION = 1 as const;
+export const EVAL_SCHEMA_VERSION = 2 as const;
+export const SUPPORTED_SCHEMA_VERSIONS = [1, 2] as const;
 
 /**
  * Adversarial case kinds. Each kind changes what "correct" means:
@@ -43,6 +48,8 @@ export interface RunMetadata {
   agentModel: string;
   baselineModel: string;
   judgeModel: string;
+  /** Optional: present in v2+ runs that included planner-executor. */
+  plannerExecutorModel?: string;
   datasetPath: string;
   datasetHash: string;
 }
@@ -108,6 +115,8 @@ export interface EvalRunResult {
   aggregate: {
     baseline: SystemAggregate;
     agent: SystemAggregate;
+    /** Present in v2+ runs. Undefined when reading a v1 result. */
+    plannerExecutor?: SystemAggregate;
   };
   errors: number;
 }
@@ -120,7 +129,8 @@ export interface EvalRunResult {
  * results files are not (they may quote private chunk text).
  */
 export interface RunIndexEntry {
-  schemaVersion: typeof EVAL_SCHEMA_VERSION;
+  /** 1 = baseline+agent only; 2 = baseline+agent+planner-executor. */
+  schemaVersion: 1 | 2;
   runId: string;
   finishedAt: string;
   gitSha: string | null;
@@ -133,6 +143,8 @@ export interface RunIndexEntry {
   resultsFile: string;
   baseline: RunIndexSystemSummary;
   agent: RunIndexSystemSummary;
+  /** Present in v2+ runs that included planner-executor. */
+  plannerExecutor?: RunIndexSystemSummary | undefined;
 }
 
 export interface RunIndexSystemSummary {

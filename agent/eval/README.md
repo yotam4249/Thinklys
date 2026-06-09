@@ -5,13 +5,19 @@ This directory holds the eval dataset and the JSON results emitted by
 
 ## What it measures
 
-For every Q&A pair in the dataset the harness runs **two systems**:
+For every Q&A pair in the dataset the harness runs **three systems** by
+default:
 
 1. **Baseline (top-k RAG).** One `search_documents` call, then one Claude
    call that stuffs the top-5 chunks into the prompt and asks for an
    answer that cites each `document_id`. No agent loop.
-2. **Agent (this work).** The full Phase 4b tool-use loop driving the
-   real MCP server.
+2. **Agent (single).** The single-agent tool-use loop driving the real
+   MCP server.
+3. **Planner-Executor (multi-agent).** Planner → executors (each scoped
+   to a tool subset, parallel within a dependency level) → synthesizer.
+
+Set `EVAL_SYSTEMS=baseline,agent` to skip planner-executor (it doubles
+the per-case API cost; useful for fast iteration on the other two).
 
 Then a second model (`claude-haiku-4-5-20251001`) acts as judge and
 scores each generated answer on:

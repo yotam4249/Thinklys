@@ -145,6 +145,24 @@ What's deliberately not adversarial-aware yet: groundedness on adversarial cases
 
 **What this PR explicitly does NOT do.** No eval integration. The existing single-agent loop, MCP server, tools, and CLI are untouched. New scripts (`pe`, `pe:mock`, `pe:demo`) live alongside the existing ones so a reader can A/B them by hand.
 
+## 14. Planner-executor in the eval: schema v2 with optional `plannerExecutor` aggregate
+
+<!-- TODO(me): rewrite this entry in my own words before I consider this PR done -->
+
+**Decision.** Bump `EVAL_SCHEMA_VERSION` to 2. `SystemName` becomes `"baseline" | "agent" | "planner-executor"`. `EvalRunResult.aggregate` and `RunIndexEntry` gain an **optional** `plannerExecutor` field — present for v2 runs, absent for v1 runs. Readers (`eval:list`, `eval:compare`, `eval:check`) tolerate the absence by showing `-` / `n/a` / skipping the system with a stderr warning, never by crashing. The `RunIndexEntrySchema` accepts `schemaVersion: z.union([z.literal(1), z.literal(2)])` so v1 entries continue to parse.
+
+A new `EVAL_SYSTEMS` env var selects which of `baseline,agent,planner-executor` to run. Default is all three. Setting `EVAL_SYSTEMS=baseline,agent` skips planner-executor — handy because planner-executor doubles the per-case API cost (planner + N executors + synthesizer Claude calls vs. one agent loop).
+
+**Alternative we rejected.** Several:
+
+1. **Require `plannerExecutor` and refuse to read v1 entries.** Cleaner type-wise — no `if (agg.plannerExecutor !== undefined)` branches in display code. Rejected because the v1 → v2 cutover would leave every existing run unreadable until manually re-run, which defeats the whole point of having a committed index that preserves history.
+2. **A `system: SystemName` array indexed everywhere** (so adding a fourth system later is a one-liner). Rejected for now because it would force every existing reader (table renderer, list CLI, compare CLI) to change shape, and we don't have a fourth system planned. The current `{baseline, agent, plannerExecutor?}` shape is honest about the small known set; if a fourth system arrives, that PR can do the refactor as its first commit.
+3. **Default `checkedSystems: ["agent", "planner-executor"]`.** Logically correct — if you ship planner-executor you probably want to gate on it. Rejected as a default because anyone running `eval:check` on a v1 history would suddenly see `[planner-executor] missing from one of the runs; skipping` warnings on every previous run. Default stays `["agent"]`; the README recommends adding `"planner-executor"` once you have a few v2 runs in the index.
+
+**Naming asymmetry to be aware of.** `SystemName` uses kebab-case (`"planner-executor"`) for argv/config compatibility. The aggregate key in `EvalRunResult.aggregate` and `RunIndexEntry` uses camelCase (`plannerExecutor`) because JS object keys with hyphens are bracket-only access. A small `aggregateKeyFor(system)` helper in `checkRuns.ts` does the conversion. This asymmetry shows up in exactly one place and is documented at the helper.
+
+**The measurement claim.** The PR body quotes the actual head-to-head numbers from running `npm run eval eval/dataset.multihop.example.jsonl`. I am NOT padding the body with a number I haven't seen. If the run hasn't happened yet at the time the PR is opened, the body says so explicitly and links to the result file after the run.
+
 ---
 
 ## What's not in here

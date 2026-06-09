@@ -6,6 +6,8 @@ import { ThinklysClient } from "../data/thinklysClient.js";
 import { runAgent } from "../agent/loop.js";
 import { connectMcpAndBuildTools } from "../agent/mcpTools.js";
 import type { AgentRunResult, ToolCallTrace } from "../agent/types.js";
+import { runPlannerExecutor } from "../planner-executor/orchestrator.js";
+import type { PlannerExecutorResult } from "../planner-executor/types.js";
 import { costFor } from "../observability/pricing.js";
 import { runBaseline, BASELINE_MODEL } from "./baseline.js";
 import { judge, JUDGE_MODEL } from "./judge.js";
@@ -28,7 +30,30 @@ import {
 } from "./types.js";
 
 const AGENT_MODEL = "claude-opus-4-7";
+const PLANNER_EXECUTOR_MODEL = "claude-opus-4-7";
 const DEFAULT_DATASET = "eval/dataset.example.jsonl";
+
+/**
+ * Comma-separated subset of {"baseline","agent","planner-executor"}. Defaults
+ * to all three. Set `EVAL_SYSTEMS=baseline,agent` to skip planner-executor on
+ * one-off runs (it doubles the per-case cost).
+ */
+function readEnabledSystems(): {
+  baseline: boolean;
+  agent: boolean;
+  plannerExecutor: boolean;
+} {
+  const raw = process.env["EVAL_SYSTEMS"];
+  if (raw === undefined || raw.trim() === "") {
+    return { baseline: true, agent: true, plannerExecutor: true };
+  }
+  const parts = raw.split(",").map((s) => s.trim());
+  return {
+    baseline: parts.includes("baseline"),
+    agent: parts.includes("agent"),
+    plannerExecutor: parts.includes("planner-executor"),
+  };
+}
 
 const EvalCaseSchema = z.object({
   id: z.string().min(1),
@@ -120,8 +145,35 @@ function buildAgentRun(
   };
 }
 
+function buildPlannerExecutorRun(
+  caseId: string,
+  result: PlannerExecutorResult,
+  latencyMs: number,
+): SystemRun {
+  const costUsd = costFor(
+    PLANNER_EXECUTOR_MODEL,
+    result.inputTokens,
+    result.outputTokens,
+    result.cacheReadTokens,
+    result.cacheCreationTokens,
+  );
+  return {
+    system: "planner-executor",
+    caseId,
+    finalText: result.finalText,
+    toolCalls: result.toolCalls.length,
+    inputTokens: result.inputTokens,
+    outputTokens: result.outputTokens,
+    cacheReadTokens: result.cacheReadTokens,
+    cacheCreationTokens: result.cacheCreationTokens,
+    latencyMs,
+    costUsd,
+    contextSentToJudge: reconstructAgentContext(result.toolCalls),
+  };
+}
+
 function buildErrorRun(
-  system: "baseline" | "agent",
+  system: "baseline" | "agent" | "planner-executor",
   caseId: string,
   err: unknown,
 ): SystemRun {
@@ -154,6 +206,7 @@ async function main(): Promise<void> {
   const gitInfo = readGitInfo();
   const datasetHash = await hashDatasetFile(datasetPath);
   const datasetPathRel = relative(process.cwd(), datasetPath) || datasetArg;
+  const enabled = readEnabledSystems();
   const metadata: RunMetadata = {
     schemaVersion: EVAL_SCHEMA_VERSION,
     runId,
@@ -164,7 +217,17 @@ async function main(): Promise<void> {
     judgeModel: JUDGE_MODEL,
     datasetPath: datasetPathRel,
     datasetHash,
+    ...(enabled.plannerExecutor ? { plannerExecutorModel: PLANNER_EXECUTOR_MODEL } : {}),
   };
+  console.error(
+    `[eval] systems: ${[
+      enabled.baseline ? "baseline" : null,
+      enabled.agent ? "agent" : null,
+      enabled.plannerExecutor ? "planner-executor" : null,
+    ]
+      .filter((s): s is string => s !== null)
+      .join(", ")}`,
+  );
   console.error(
     `[eval] runId=${runId} git=${gitInfo.sha ? gitInfo.sha.slice(0, 7) : "none"}${gitInfo.dirty ? "*" : ""} datasetHash=${datasetHash}`,
   );
@@ -185,39 +248,67 @@ async function main(): Promise<void> {
     for (const c of cases) {
       console.error(`\n[eval] === case ${c.id}: ${c.question}`);
 
+      const perCaseRuns: SystemRun[] = [];
+
       // BASELINE
-      let baselineRun: SystemRun;
-      try {
-        baselineRun = await runBaseline(c.id, c.question, thinklys, anthropic);
-        console.error(
-          `[eval]   baseline: ${baselineRun.inputTokens}/${baselineRun.outputTokens} tok, ${baselineRun.latencyMs}ms, $${baselineRun.costUsd.toFixed(6)}`,
-        );
-      } catch (err) {
-        errorCount += 1;
-        baselineRun = buildErrorRun("baseline", c.id, err);
-        console.error(`[eval]   baseline ERROR: ${baselineRun.error}`);
+      if (enabled.baseline) {
+        let baselineRun: SystemRun;
+        try {
+          baselineRun = await runBaseline(c.id, c.question, thinklys, anthropic);
+          console.error(
+            `[eval]   baseline: ${baselineRun.inputTokens}/${baselineRun.outputTokens} tok, ${baselineRun.latencyMs}ms, $${baselineRun.costUsd.toFixed(6)}`,
+          );
+        } catch (err) {
+          errorCount += 1;
+          baselineRun = buildErrorRun("baseline", c.id, err);
+          console.error(`[eval]   baseline ERROR: ${baselineRun.error}`);
+        }
+        runs.push(baselineRun);
+        perCaseRuns.push(baselineRun);
       }
-      runs.push(baselineRun);
 
       // AGENT
-      let agentRun: SystemRun;
-      try {
-        const t0 = Date.now();
-        const agentResult = await runAgent(c.question, mcp.tools);
-        const latencyMs = Date.now() - t0;
-        agentRun = buildAgentRun(c.id, agentResult, latencyMs);
-        console.error(
-          `[eval]   agent:    steps=${agentResult.steps} tools=${agentResult.toolCalls.length} ${agentRun.inputTokens}/${agentRun.outputTokens} tok, cache_read=${agentRun.cacheReadTokens}, ${latencyMs}ms, $${agentRun.costUsd.toFixed(6)}`,
-        );
-      } catch (err) {
-        errorCount += 1;
-        agentRun = buildErrorRun("agent", c.id, err);
-        console.error(`[eval]   agent ERROR: ${agentRun.error}`);
+      if (enabled.agent) {
+        let agentRun: SystemRun;
+        try {
+          const t0 = Date.now();
+          const agentResult = await runAgent(c.question, mcp.tools);
+          const latencyMs = Date.now() - t0;
+          agentRun = buildAgentRun(c.id, agentResult, latencyMs);
+          console.error(
+            `[eval]   agent:    steps=${agentResult.steps} tools=${agentResult.toolCalls.length} ${agentRun.inputTokens}/${agentRun.outputTokens} tok, cache_read=${agentRun.cacheReadTokens}, ${latencyMs}ms, $${agentRun.costUsd.toFixed(6)}`,
+          );
+        } catch (err) {
+          errorCount += 1;
+          agentRun = buildErrorRun("agent", c.id, err);
+          console.error(`[eval]   agent ERROR: ${agentRun.error}`);
+        }
+        runs.push(agentRun);
+        perCaseRuns.push(agentRun);
       }
-      runs.push(agentRun);
+
+      // PLANNER-EXECUTOR
+      if (enabled.plannerExecutor) {
+        let peRun: SystemRun;
+        try {
+          const t0 = Date.now();
+          const peResult = await runPlannerExecutor(c.question, mcp.tools, { anthropic });
+          const latencyMs = Date.now() - t0;
+          peRun = buildPlannerExecutorRun(c.id, peResult, latencyMs);
+          console.error(
+            `[eval]   pe:       subtasks=${peResult.plan.subtasks.length} steps=${peResult.steps} tools=${peResult.toolCalls.length} ${peRun.inputTokens}/${peRun.outputTokens} tok, cache_read=${peRun.cacheReadTokens}, ${latencyMs}ms, $${peRun.costUsd.toFixed(6)}`,
+          );
+        } catch (err) {
+          errorCount += 1;
+          peRun = buildErrorRun("planner-executor", c.id, err);
+          console.error(`[eval]   pe ERROR: ${peRun.error}`);
+        }
+        runs.push(peRun);
+        perCaseRuns.push(peRun);
+      }
 
       // Judge each (skip if it errored — record a failing judgement)
-      for (const run of [baselineRun, agentRun]) {
+      for (const run of perCaseRuns) {
         if (run.error) {
           judgements.push({
             caseId: c.id,
@@ -255,7 +346,9 @@ async function main(): Promise<void> {
   }
 
   const finishedAt = new Date();
-  const agg = aggregate(runs, judgements, cases);
+  const agg = aggregate(runs, judgements, cases, {
+    includePlannerExecutor: enabled.plannerExecutor,
+  });
 
   const result: EvalRunResult = {
     metadata,
@@ -310,6 +403,21 @@ async function main(): Promise<void> {
         ? { multihopPct: agg.agent.multihopPct }
         : {}),
     },
+    ...(agg.plannerExecutor !== undefined
+      ? {
+          plannerExecutor: {
+            correctnessPct: agg.plannerExecutor.correctnessPct,
+            groundednessPct: agg.plannerExecutor.groundednessPct,
+            totalCostUsd: agg.plannerExecutor.totalCostUsd,
+            ...(agg.plannerExecutor.adversarialPct !== undefined
+              ? { adversarialPct: agg.plannerExecutor.adversarialPct }
+              : {}),
+            ...(agg.plannerExecutor.multihopPct !== undefined
+              ? { multihopPct: agg.plannerExecutor.multihopPct }
+              : {}),
+          },
+        }
+      : {}),
   };
   await appendIndexEntry(indexPath, indexEntry);
 

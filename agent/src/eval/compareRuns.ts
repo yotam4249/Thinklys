@@ -9,7 +9,7 @@ import type {
   SystemName,
 } from "./types.js";
 
-const SYSTEMS: ReadonlyArray<SystemName> = ["baseline", "agent"];
+const SYSTEMS: ReadonlyArray<SystemName> = ["baseline", "agent", "planner-executor"];
 
 interface PickedPair {
   base: RunIndexEntry;
@@ -104,72 +104,78 @@ function fmtDeltaUsd(base: number, head: number): string {
   return `$${base.toFixed(4)} → $${head.toFixed(4)} (${sign}$${Math.abs(delta).toFixed(4)})`;
 }
 
-function renderAggregateTable(
-  base: { baseline: SystemAggregate; agent: SystemAggregate },
-  head: { baseline: SystemAggregate; agent: SystemAggregate },
-): string {
-  const rows: Array<[string, string, string]> = [
-    [
+interface AggregateBundle {
+  baseline: SystemAggregate;
+  agent: SystemAggregate;
+  plannerExecutor?: SystemAggregate;
+}
+
+function renderAggregateTable(base: AggregateBundle, head: AggregateBundle): string {
+  const includePE =
+    base.plannerExecutor !== undefined && head.plannerExecutor !== undefined;
+
+  // For each metric, two delta strings (baseline, agent) and optionally one
+  // more (planner-executor).
+  function row(
+    label: string,
+    extract: (a: SystemAggregate, b: SystemAggregate) => string,
+    extractOpt?: (a: SystemAggregate | undefined, b: SystemAggregate | undefined) => string,
+  ): string[] {
+    const r = [label, extract(base.baseline, head.baseline), extract(base.agent, head.agent)];
+    if (includePE) {
+      const peExtract = extractOpt
+        ? extractOpt(base.plannerExecutor, head.plannerExecutor)
+        : extract(base.plannerExecutor!, head.plannerExecutor!);
+      r.push(peExtract);
+    }
+    return r;
+  }
+
+  const rows: string[][] = [
+    row(
       "Correctness %",
-      fmtDeltaPct(base.baseline.correctnessPct, head.baseline.correctnessPct),
-      fmtDeltaPct(base.agent.correctnessPct, head.agent.correctnessPct),
-    ],
-    [
+      (a, b) => fmtDeltaPct(a.correctnessPct, b.correctnessPct),
+    ),
+    row(
       "Groundedness %",
-      fmtDeltaPct(base.baseline.groundednessPct, head.baseline.groundednessPct),
-      fmtDeltaPct(base.agent.groundednessPct, head.agent.groundednessPct),
-    ],
-    [
+      (a, b) => fmtDeltaPct(a.groundednessPct, b.groundednessPct),
+    ),
+    row(
       "Adversarial pass-rate",
-      fmtOptionalDeltaPct(base.baseline.adversarialPct, head.baseline.adversarialPct),
-      fmtOptionalDeltaPct(base.agent.adversarialPct, head.agent.adversarialPct),
-    ],
-    [
+      (a, b) => fmtOptionalDeltaPct(a.adversarialPct, b.adversarialPct),
+      (a, b) => fmtOptionalDeltaPct(a?.adversarialPct, b?.adversarialPct),
+    ),
+    row(
       "Multi-hop pass-rate",
-      fmtOptionalDeltaPct(base.baseline.multihopPct, head.baseline.multihopPct),
-      fmtOptionalDeltaPct(base.agent.multihopPct, head.agent.multihopPct),
-    ],
-    [
-      "Mean tool calls / Q",
-      fmtDeltaNum(base.baseline.meanToolCalls, head.baseline.meanToolCalls, 2),
-      fmtDeltaNum(base.agent.meanToolCalls, head.agent.meanToolCalls, 2),
-    ],
-    [
-      "Mean input tokens / Q",
-      fmtDeltaNum(base.baseline.meanInputTokens, head.baseline.meanInputTokens, 0),
-      fmtDeltaNum(base.agent.meanInputTokens, head.agent.meanInputTokens, 0),
-    ],
-    [
+      (a, b) => fmtOptionalDeltaPct(a.multihopPct, b.multihopPct),
+      (a, b) => fmtOptionalDeltaPct(a?.multihopPct, b?.multihopPct),
+    ),
+    row("Mean tool calls / Q", (a, b) => fmtDeltaNum(a.meanToolCalls, b.meanToolCalls, 2)),
+    row("Mean input tokens / Q", (a, b) => fmtDeltaNum(a.meanInputTokens, b.meanInputTokens, 0)),
+    row(
       "Mean cache-read tokens",
-      fmtDeltaNum(base.baseline.meanCacheReadTokens, head.baseline.meanCacheReadTokens, 0),
-      fmtDeltaNum(base.agent.meanCacheReadTokens, head.agent.meanCacheReadTokens, 0),
-    ],
-    [
+      (a, b) => fmtDeltaNum(a.meanCacheReadTokens, b.meanCacheReadTokens, 0),
+    ),
+    row(
       "Mean output tokens / Q",
-      fmtDeltaNum(base.baseline.meanOutputTokens, head.baseline.meanOutputTokens, 0),
-      fmtDeltaNum(base.agent.meanOutputTokens, head.agent.meanOutputTokens, 0),
-    ],
-    [
-      "Mean latency (ms)",
-      fmtDeltaNum(base.baseline.meanLatencyMs, head.baseline.meanLatencyMs, 0),
-      fmtDeltaNum(base.agent.meanLatencyMs, head.agent.meanLatencyMs, 0),
-    ],
-    [
-      "Total cost (USD)",
-      fmtDeltaUsd(base.baseline.totalCostUsd, head.baseline.totalCostUsd),
-      fmtDeltaUsd(base.agent.totalCostUsd, head.agent.totalCostUsd),
-    ],
+      (a, b) => fmtDeltaNum(a.meanOutputTokens, b.meanOutputTokens, 0),
+    ),
+    row("Mean latency (ms)", (a, b) => fmtDeltaNum(a.meanLatencyMs, b.meanLatencyMs, 0)),
+    row("Total cost (USD)", (a, b) => fmtDeltaUsd(a.totalCostUsd, b.totalCostUsd)),
   ];
 
-  const metricCol = Math.max(...rows.map((r) => r[0].length), "Metric".length);
-  const baselineCol = Math.max(...rows.map((r) => r[1].length), "Baseline (base → head)".length);
-  const agentCol = Math.max(...rows.map((r) => r[2].length), "Agent (base → head)".length);
+  const titles = ["Metric", "Baseline (base → head)", "Agent (base → head)"];
+  if (includePE) titles.push("Planner-Executor (base → head)");
 
+  const widths = titles.map((t, colIdx) => {
+    const maxCell = rows.reduce((mx, r) => Math.max(mx, (r[colIdx] ?? "").length), 0);
+    return Math.max(t.length, maxCell);
+  });
   const header =
-    `| ${"Metric".padEnd(metricCol)} | ${"Baseline (base → head)".padEnd(baselineCol)} | ${"Agent (base → head)".padEnd(agentCol)} |`;
-  const sep = `| ${"-".repeat(metricCol)} | ${"-".repeat(baselineCol)} | ${"-".repeat(agentCol)} |`;
+    "| " + titles.map((t, i) => t.padEnd(widths[i] ?? t.length)).join(" | ") + " |";
+  const sep = "| " + widths.map((w) => "-".repeat(w)).join(" | ") + " |";
   const body = rows.map(
-    ([m, b, a]) => `| ${m.padEnd(metricCol)} | ${b.padEnd(baselineCol)} | ${a.padEnd(agentCol)} |`,
+    (r) => "| " + r.map((c, i) => c.padEnd(widths[i] ?? c.length)).join(" | ") + " |",
   );
   return [header, sep, ...body].join("\n");
 }

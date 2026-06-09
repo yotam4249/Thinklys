@@ -19,7 +19,7 @@ const RegressionConfigSchema = z.object({
   /** If true: any case that was correct in base and incorrect in head fails. */
   failOnNewPassToFail: z.boolean(),
   /** Which systems to gate. Empty array gates nothing (useful for dry-run). */
-  checkedSystems: z.array(z.enum(["baseline", "agent"])),
+  checkedSystems: z.array(z.enum(["baseline", "agent", "planner-executor"])),
   /**
    * Adversarial pass-rate drop tolerance, in percentage points. Skipped when
    * either base or head has no adversarial cases. Defaults to 0 (any drop
@@ -52,6 +52,11 @@ interface Violation {
 interface PickedPair {
   base: RunIndexEntry;
   head: RunIndexEntry;
+}
+
+function aggregateKeyFor(system: SystemName): "baseline" | "agent" | "plannerExecutor" {
+  if (system === "planner-executor") return "plannerExecutor";
+  return system;
 }
 
 function usage(): never {
@@ -145,8 +150,15 @@ function checkSystem(
   config: RegressionConfig,
 ): Violation[] {
   const violations: Violation[] = [];
-  const baseAgg = base.aggregate[system];
-  const headAgg = head.aggregate[system];
+  const aggKey = aggregateKeyFor(system);
+  const baseAgg = base.aggregate[aggKey];
+  const headAgg = head.aggregate[aggKey];
+  if (baseAgg === undefined || headAgg === undefined) {
+    console.error(
+      `[eval:check] system "${system}" missing from one of the runs (base: ${baseAgg ? "present" : "absent"}, head: ${headAgg ? "present" : "absent"}); skipping`,
+    );
+    return [];
+  }
 
   const corrDrop = baseAgg.correctnessPct - headAgg.correctnessPct;
   if (corrDrop > config.maxCorrectnessDropPct) {
