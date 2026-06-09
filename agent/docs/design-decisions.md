@@ -60,6 +60,18 @@ The comment on `agent/src/agent/loop.ts:176-181` records this so the next person
 
 For completeness: the MCP Inspector exposes server stderr in a dedicated pane, so error-stream logging is fully visible during manual QA.
 
+## 8. Eval persistence: schema-versioned result files plus a committed JSONL index
+
+<!-- TODO(me): rewrite this entry in my own words before I consider this PR done -->
+
+**Decision.** Every `npm run eval` invocation now stamps a `runId` (uuid), a git SHA + dirty flag, the three model IDs in play (baseline / agent / judge), and a sha256 of the dataset file into a `RunMetadata` block on `EvalRunResult`. The full result JSON keeps living under `eval/results/` (gitignored — it can quote chunk text), but a small one-line summary is appended to `eval/index.jsonl`, which **is** committed. `npm run eval:list` reads that index and renders a recent-runs table. A typed `EVAL_SCHEMA_VERSION` literal gates both files so future readers branch on the version instead of silently reinterpreting an older shape.
+
+**Alternative we rejected.** The obvious alternatives are (a) just timestamp the per-run JSON files and let the user `ls` them, or (b) store everything in a sqlite file. (a) is what we had: there is no way to look at a result file and know which code produced it, no way to compare across runs without re-parsing every file, and a teammate on a different machine cannot see your historical numbers because the directory is gitignored. (b) carries a binary file into git and a query layer we do not need for tens-to-hundreds of rows — JSONL is grep-able, conflict-resolvable, and round-trippable through `cat`.
+
+The committed index plus the schemaVersion is the seam the next two PRs (cross-run diff, regression gate) attach to. Without it they would have no stable cross-machine ground truth to compare against.
+
+Flag for me: the dataset is fingerprinted, but the **corpus** (the user's uploaded documents, which lives in ChromaDB) is not. Two runs with the same `datasetHash` against different uploaded corpora will look comparable in the table when they should not be. I want to think about whether that matters before defending this PR — read `agent/src/eval/runIndex.ts` and `agent/src/eval/runEval.ts` first.
+
 ---
 
 ## What's not in here

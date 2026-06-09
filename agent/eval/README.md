@@ -62,8 +62,26 @@ and baseline can both fetch chunks.
 
 - Markdown comparison table printed to **stdout**.
 - Full `EvalRunResult` written to `eval/results/<UTC-ISO>.json`
-  (gitignored). Contains every per-case run, every judgement, the
-  aggregate, and an `errors` count.
+  (gitignored — may quote chunk text from your private corpus).
+  Contains every per-case run, every judgement, the aggregate, an
+  `errors` count, and a `metadata` block (schemaVersion, runId, git
+  SHA + dirty flag, model IDs, dataset path + hash).
+- One-line summary appended to `eval/index.jsonl` (**committed**) so
+  trends survive across machines: runId, finishedAt, git info, dataset
+  hash, case count, errors, results-file path, and per-system
+  correctness / groundedness / total cost.
+
+## Listing runs
+
+```bash
+npm run eval:list           # last 10 runs
+npm run eval:list 25        # last 25
+```
+
+Reads `eval/index.jsonl` (no API calls) and renders a recent-runs
+table with the runId prefix, git SHA, dataset hash, and the headline
+metrics per system. Use the `runId` or the `resultsFile` field in
+`eval/index.jsonl` to look up the full per-case result JSON.
 
 ## Interpreting the table
 
