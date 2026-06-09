@@ -20,6 +20,7 @@
     "eval": "tsx src/eval/runEval.ts",
     "eval:list": "tsx src/eval/listRuns.ts",
     "eval:compare": "tsx src/eval/compareRuns.ts",
+    "eval:check": "tsx src/eval/checkRuns.ts",
     "trace": "tsx src/observability/print-trace.ts"
   },
   "dependencies": {
