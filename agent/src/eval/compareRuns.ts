@@ -82,6 +82,16 @@ function fmtDeltaPct(base: number, head: number): string {
   return `${base.toFixed(1)}% → ${head.toFixed(1)}% (${sign}${delta.toFixed(1)})`;
 }
 
+function fmtOptionalDeltaPct(
+  base: number | undefined,
+  head: number | undefined,
+): string {
+  if (base === undefined && head === undefined) return "n/a (no cases)";
+  if (base === undefined) return `- → ${head?.toFixed(1)}% (new)`;
+  if (head === undefined) return `${base.toFixed(1)}% → - (gone)`;
+  return fmtDeltaPct(base, head);
+}
+
 function fmtDeltaNum(base: number, head: number, digits = 0): string {
   const delta = head - base;
   const sign = delta >= 0 ? "+" : "";
@@ -108,6 +118,11 @@ function renderAggregateTable(
       "Groundedness %",
       fmtDeltaPct(base.baseline.groundednessPct, head.baseline.groundednessPct),
       fmtDeltaPct(base.agent.groundednessPct, head.agent.groundednessPct),
+    ],
+    [
+      "Adversarial pass-rate",
+      fmtOptionalDeltaPct(base.baseline.adversarialPct, head.baseline.adversarialPct),
+      fmtOptionalDeltaPct(base.agent.adversarialPct, head.agent.adversarialPct),
     ],
     [
       "Mean tool calls / Q",

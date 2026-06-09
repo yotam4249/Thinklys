@@ -66,6 +66,18 @@ async function main(): Promise<void> {
     { title: "agent grnd", width: 10, get: (e) => fmtPct(e.agent.groundednessPct) },
     { title: "base $", width: 9, get: (e) => fmtUsd(e.baseline.totalCostUsd) },
     { title: "agent $", width: 9, get: (e) => fmtUsd(e.agent.totalCostUsd) },
+    {
+      title: "base adv",
+      width: 8,
+      get: (e) =>
+        e.baseline.adversarialPct !== undefined ? fmtPct(e.baseline.adversarialPct) : "-",
+    },
+    {
+      title: "agent adv",
+      width: 9,
+      get: (e) =>
+        e.agent.adversarialPct !== undefined ? fmtPct(e.agent.adversarialPct) : "-",
+    },
   ];
 
   const header = "| " + cols.map((c) => c.title.padEnd(c.width)).join(" | ") + " |";

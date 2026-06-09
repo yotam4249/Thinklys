@@ -72,11 +72,13 @@ const RunIndexEntrySchema = z.object({
     correctnessPct: z.number(),
     groundednessPct: z.number(),
     totalCostUsd: z.number(),
+    adversarialPct: z.number().optional(),
   }),
   agent: z.object({
     correctnessPct: z.number(),
     groundednessPct: z.number(),
     totalCostUsd: z.number(),
+    adversarialPct: z.number().optional(),
   }),
 });
 
