@@ -72,6 +72,18 @@ The committed index plus the schemaVersion is the seam the next two PRs (cross-r
 
 Flag for me: the dataset is fingerprinted, but the **corpus** (the user's uploaded documents, which lives in ChromaDB) is not. Two runs with the same `datasetHash` against different uploaded corpora will look comparable in the table when they should not be. I want to think about whether that matters before defending this PR — read `agent/src/eval/runIndex.ts` and `agent/src/eval/runEval.ts` first.
 
+## 9. Cross-run comparison is a read-only viewer, separate from any regression gate
+
+<!-- TODO(me): rewrite this entry in my own words before I consider this PR done -->
+
+**Decision.** `npm run eval:compare` only renders deltas (aggregate metrics, per-case correctness/groundedness transitions). It always exits 0, even when correctness drops to zero, and it never writes anything. The thresholds and the non-zero exit live in a *separate* command (`eval:check`, landed in PR 3).
+
+**Alternative we rejected.** Folding "show the diff" and "fail if too bad" into one command. Tempting because in CI you usually want both — but the failure threshold is a project policy that changes over time, while looking at a diff is something I do every time I touch the eval code or the agent prompt. Coupling them forces every casual `compare` invocation to either pass a `--no-fail` flag or risk an exit code the human caller did not expect, and it puts the policy in argv instead of in a committed config file.
+
+Separating them keeps `compare` honest as an observability tool: it never lies about the numbers, it never refuses to render, and the regression gate can layer on top by calling the same `loadResult` + `buildTransitions` helpers without inheriting any opinions.
+
+Default pair-picking (newest two runs with matching `datasetHash`) is the right default because comparing across different datasets is rarely meaningful — but the explicit two-arg form lets me override it when I want to look at, say, an old branch vs. main. The mismatched-dataset case prints a stderr warning rather than refusing, because there are legitimate "I changed the dataset, did the agent still look sane on the overlapping cases?" moments.
+
 ---
 
 ## What's not in here

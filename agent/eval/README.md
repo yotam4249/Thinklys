@@ -83,6 +83,31 @@ table with the runId prefix, git SHA, dataset hash, and the headline
 metrics per system. Use the `runId` or the `resultsFile` field in
 `eval/index.jsonl` to look up the full per-case result JSON.
 
+## Comparing two runs
+
+```bash
+npm run eval:compare                          # newest two runs on the same datasetHash
+npm run eval:compare -- <baseId> <headId>     # 8-char prefix from `eval:list` is enough
+```
+
+Read-only — always exits 0, never writes anything. Prints:
+
+- A header naming both runs (runId, finished time, git SHA, dataset).
+- An aggregate-deltas table (correctness Δ, groundedness Δ, mean
+  tokens, mean cache reads, mean latency, mean tool calls, total cost
+  Δ) per system, formatted as `base → head (Δ)`.
+- A per-case transitions table per system showing each case's
+  correctness / groundedness in both runs and a transition note
+  (`correct: fail→pass`, `correct: pass→fail (regression)`, etc.).
+
+The two-arg form is finishedAt-aware: whichever run is older becomes
+"base", whichever is newer becomes "head", regardless of argument
+order. Different `datasetHash` between the two runs prints a stderr
+warning but does not block.
+
+The regression-gate command that consumes these deltas with policy
+thresholds lives in PR 3 (`npm run eval:check`).
+
 ## Interpreting the table
 
 - A higher **correctness %** for the agent than the baseline says the
