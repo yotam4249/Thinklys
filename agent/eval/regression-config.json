@@ -1,5 +1,5 @@
 {
-  "$comment": "Edited by hand. Read by `npm run eval:check`. Loose-but-not-paranoid defaults; adversarial pass-rate is strict because it tracks security-shaped behavior. Multi-hop is small-sample so the threshold is a touch wider.",
+  "$comment": "Edited by hand. Read by `npm run eval:check`. Loose-but-not-paranoid defaults; adversarial is strict (security-shaped), multi-hop is small-sample so threshold is wider. checkedSystems can include \"planner-executor\" once that system is producing stable numbers.",
   "maxCorrectnessDropPct": 5,
   "maxGroundednessDropPct": 5,
   "maxAdversarialDropPct": 0,

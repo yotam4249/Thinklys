@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { dirname } from "node:path";
 import { z } from "zod";
-import { EVAL_SCHEMA_VERSION, type RunIndexEntry } from "./types.js";
+import type { RunIndexEntry } from "./types.js";
 
 /**
  * Default location of the committed run index, relative to `agent/`.
@@ -57,8 +57,16 @@ function tryGit(args: ReadonlyArray<string>): string | null {
   }
 }
 
+const SystemSummarySchema = z.object({
+  correctnessPct: z.number(),
+  groundednessPct: z.number(),
+  totalCostUsd: z.number(),
+  adversarialPct: z.number().optional(),
+  multihopPct: z.number().optional(),
+});
+
 const RunIndexEntrySchema = z.object({
-  schemaVersion: z.literal(EVAL_SCHEMA_VERSION),
+  schemaVersion: z.union([z.literal(1), z.literal(2)]),
   runId: z.string().min(1),
   finishedAt: z.string().min(1),
   gitSha: z.string().nullable(),
@@ -68,20 +76,9 @@ const RunIndexEntrySchema = z.object({
   caseCount: z.number().int().nonnegative(),
   errors: z.number().int().nonnegative(),
   resultsFile: z.string().min(1),
-  baseline: z.object({
-    correctnessPct: z.number(),
-    groundednessPct: z.number(),
-    totalCostUsd: z.number(),
-    adversarialPct: z.number().optional(),
-    multihopPct: z.number().optional(),
-  }),
-  agent: z.object({
-    correctnessPct: z.number(),
-    groundednessPct: z.number(),
-    totalCostUsd: z.number(),
-    adversarialPct: z.number().optional(),
-    multihopPct: z.number().optional(),
-  }),
+  baseline: SystemSummarySchema,
+  agent: SystemSummarySchema,
+  plannerExecutor: SystemSummarySchema.optional(),
 });
 
 export async function appendIndexEntry(

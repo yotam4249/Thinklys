@@ -90,6 +90,26 @@ async function main(): Promise<void> {
       get: (e) =>
         e.agent.multihopPct !== undefined ? fmtPct(e.agent.multihopPct) : "-",
     },
+    {
+      title: "pe corr",
+      width: 7,
+      get: (e) =>
+        e.plannerExecutor !== undefined ? fmtPct(e.plannerExecutor.correctnessPct) : "-",
+    },
+    {
+      title: "pe mh",
+      width: 7,
+      get: (e) =>
+        e.plannerExecutor?.multihopPct !== undefined
+          ? fmtPct(e.plannerExecutor.multihopPct)
+          : "-",
+    },
+    {
+      title: "pe $",
+      width: 8,
+      get: (e) =>
+        e.plannerExecutor !== undefined ? fmtUsd(e.plannerExecutor.totalCostUsd) : "-",
+    },
   ];
 
   const header = "| " + cols.map((c) => c.title.padEnd(c.width)).join(" | ") + " |";

@@ -86,13 +86,32 @@ export function aggregate(
   runs: ReadonlyArray<SystemRun>,
   judgements: ReadonlyArray<Judgement>,
   cases: ReadonlyArray<EvalCase>,
-): { baseline: SystemAggregate; agent: SystemAggregate } {
+  options?: { includePlannerExecutor?: boolean },
+): {
+  baseline: SystemAggregate;
+  agent: SystemAggregate;
+  plannerExecutor?: SystemAggregate;
+} {
   const adversarialIds = buildAdversarialIdSet(cases);
   const multihopIds = buildMultihopIdSet(cases);
-  return {
+  const out: {
+    baseline: SystemAggregate;
+    agent: SystemAggregate;
+    plannerExecutor?: SystemAggregate;
+  } = {
     baseline: aggregateOne("baseline", runs, judgements, adversarialIds, multihopIds),
     agent: aggregateOne("agent", runs, judgements, adversarialIds, multihopIds),
   };
+  if (options?.includePlannerExecutor) {
+    out.plannerExecutor = aggregateOne(
+      "planner-executor",
+      runs,
+      judgements,
+      adversarialIds,
+      multihopIds,
+    );
+  }
+  return out;
 }
 
 function fmtPct(n: number): string {
@@ -124,48 +143,60 @@ function fmtMultihop(agg: SystemAggregate): string {
 export function renderMarkdownTable(agg: {
   baseline: SystemAggregate;
   agent: SystemAggregate;
+  plannerExecutor?: SystemAggregate;
 }): string {
   const b = agg.baseline;
   const a = agg.agent;
-  const rows: Array<[string, string, string]> = [
-    ["Correctness", fmtPct(b.correctnessPct), fmtPct(a.correctnessPct)],
-    ["Groundedness", fmtPct(b.groundednessPct), fmtPct(a.groundednessPct)],
-    ["Adversarial pass-rate", fmtAdv(b), fmtAdv(a)],
-    ["Multi-hop pass-rate", fmtMultihop(b), fmtMultihop(a)],
-    [
-      "Mean tool calls / Q",
-      fmtNum(b.meanToolCalls, 2),
-      fmtNum(a.meanToolCalls, 2),
-    ],
-    [
-      "Mean input tokens / Q",
-      fmtNum(b.meanInputTokens, 0),
-      fmtNum(a.meanInputTokens, 0),
-    ],
-    [
-      "Mean cache-read tokens",
-      fmtNum(b.meanCacheReadTokens, 0),
-      fmtNum(a.meanCacheReadTokens, 0),
-    ],
-    [
-      "Mean output tokens / Q",
-      fmtNum(b.meanOutputTokens, 0),
-      fmtNum(a.meanOutputTokens, 0),
-    ],
-    [
-      "Mean latency (ms)",
-      fmtNum(b.meanLatencyMs, 0),
-      fmtNum(a.meanLatencyMs, 0),
-    ],
-    ["Total cost (USD)", fmtUsd(b.totalCostUsd), fmtUsd(a.totalCostUsd)],
+  const pe = agg.plannerExecutor;
+
+  const cell = (
+    extractor: (s: SystemAggregate) => string,
+    forPE?: (s: SystemAggregate) => string,
+  ): string[] => {
+    const row = [extractor(b), extractor(a)];
+    if (pe !== undefined) row.push((forPE ?? extractor)(pe));
+    return row;
+  };
+
+  const rows: Array<[string, ...string[]]> = [
+    ["Correctness", ...cell((s) => fmtPct(s.correctnessPct))],
+    ["Groundedness", ...cell((s) => fmtPct(s.groundednessPct))],
+    ["Adversarial pass-rate", ...cell((s) => fmtAdv(s))],
+    ["Multi-hop pass-rate", ...cell((s) => fmtMultihop(s))],
+    ["Mean tool calls / Q", ...cell((s) => fmtNum(s.meanToolCalls, 2))],
+    ["Mean input tokens / Q", ...cell((s) => fmtNum(s.meanInputTokens, 0))],
+    ["Mean cache-read tokens", ...cell((s) => fmtNum(s.meanCacheReadTokens, 0))],
+    ["Mean output tokens / Q", ...cell((s) => fmtNum(s.meanOutputTokens, 0))],
+    ["Mean latency (ms)", ...cell((s) => fmtNum(s.meanLatencyMs, 0))],
+    ["Total cost (USD)", ...cell((s) => fmtUsd(s.totalCostUsd))],
   ];
 
-  const header = [
-    "| Metric                   | Top-k RAG (baseline) | Agent (this work) |",
-    "| ------------------------ | -------------------- | ----------------- |",
-  ];
-  const body = rows.map(([metric, base, agent]) => {
-    return `| ${metric.padEnd(24)} | ${base.padEnd(20)} | ${agent.padEnd(17)} |`;
+  const titles: string[] = ["Metric", "Top-k RAG (baseline)", "Agent (single)"];
+  if (pe !== undefined) titles.push("Planner-Executor");
+
+  const widths = titles.map((t, colIdx) => {
+    const maxCell = rows.reduce((max, r) => {
+      const v = r[colIdx + 1] ?? "";
+      return v.length > max ? v.length : max;
+    }, 0);
+    return Math.max(t.length, maxCell, colIdx === 0 ? 24 : 17);
   });
-  return [...header, ...body].join("\n");
+
+  const headerLine =
+    "| " +
+    titles.map((t, i) => t.padEnd(widths[i] ?? t.length)).join(" | ") +
+    " |";
+  const sepLine =
+    "| " +
+    widths.map((w) => "-".repeat(w)).join(" | ") +
+    " |";
+  const body = rows.map((r) => {
+    const cells = [r[0], ...r.slice(1)];
+    return (
+      "| " +
+      cells.map((c, i) => c.padEnd(widths[i] ?? c.length)).join(" | ") +
+      " |"
+    );
+  });
+  return [headerLine, sepLine, ...body].join("\n");
 }
