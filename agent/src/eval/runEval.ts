@@ -1,20 +1,30 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { relative, resolve } from "node:path";
 import { z } from "zod";
 import { ThinklysClient } from "../data/thinklysClient.js";
 import { runAgent } from "../agent/loop.js";
 import { connectMcpAndBuildTools } from "../agent/mcpTools.js";
 import type { AgentRunResult, ToolCallTrace } from "../agent/types.js";
 import { costFor } from "../observability/pricing.js";
-import { runBaseline } from "./baseline.js";
-import { judge } from "./judge.js";
+import { runBaseline, BASELINE_MODEL } from "./baseline.js";
+import { judge, JUDGE_MODEL } from "./judge.js";
 import { aggregate, renderMarkdownTable } from "./metrics.js";
-import type {
-  EvalCase,
-  EvalRunResult,
-  Judgement,
-  SystemRun,
+import {
+  INDEX_RELATIVE_PATH,
+  appendIndexEntry,
+  hashDatasetFile,
+  newRunId,
+  readGitInfo,
+} from "./runIndex.js";
+import {
+  EVAL_SCHEMA_VERSION,
+  type EvalCase,
+  type EvalRunResult,
+  type Judgement,
+  type RunIndexEntry,
+  type RunMetadata,
+  type SystemRun,
 } from "./types.js";
 
 const AGENT_MODEL = "claude-opus-4-7";
@@ -139,6 +149,25 @@ async function main(): Promise<void> {
   const cases = await loadDataset(datasetPath);
   console.error(`[eval] cases loaded: ${cases.length}`);
 
+  const runId = newRunId();
+  const gitInfo = readGitInfo();
+  const datasetHash = await hashDatasetFile(datasetPath);
+  const datasetPathRel = relative(process.cwd(), datasetPath) || datasetArg;
+  const metadata: RunMetadata = {
+    schemaVersion: EVAL_SCHEMA_VERSION,
+    runId,
+    gitSha: gitInfo.sha,
+    gitDirty: gitInfo.dirty,
+    agentModel: AGENT_MODEL,
+    baselineModel: BASELINE_MODEL,
+    judgeModel: JUDGE_MODEL,
+    datasetPath: datasetPathRel,
+    datasetHash,
+  };
+  console.error(
+    `[eval] runId=${runId} git=${gitInfo.sha ? gitInfo.sha.slice(0, 7) : "none"}${gitInfo.dirty ? "*" : ""} datasetHash=${datasetHash}`,
+  );
+
   const startedAt = new Date();
 
   const thinklys = new ThinklysClient();
@@ -228,6 +257,7 @@ async function main(): Promise<void> {
   const agg = aggregate(runs, judgements);
 
   const result: EvalRunResult = {
+    metadata,
     startedAt: startedAt.toISOString(),
     finishedAt: finishedAt.toISOString(),
     cases,
@@ -243,11 +273,39 @@ async function main(): Promise<void> {
   const resultsFile = resolve(resultsDir, utcIsoFileName(finishedAt));
   await writeFile(resultsFile, JSON.stringify(result, null, 2), "utf8");
 
+  // Append a one-line summary to the committed run index.
+  const indexPath = resolve(process.cwd(), INDEX_RELATIVE_PATH);
+  const resultsFileRel = relative(process.cwd(), resultsFile);
+  const indexEntry: RunIndexEntry = {
+    schemaVersion: EVAL_SCHEMA_VERSION,
+    runId,
+    finishedAt: finishedAt.toISOString(),
+    gitSha: metadata.gitSha,
+    gitDirty: metadata.gitDirty,
+    datasetPath: metadata.datasetPath,
+    datasetHash: metadata.datasetHash,
+    caseCount: cases.length,
+    errors: errorCount,
+    resultsFile: resultsFileRel,
+    baseline: {
+      correctnessPct: agg.baseline.correctnessPct,
+      groundednessPct: agg.baseline.groundednessPct,
+      totalCostUsd: agg.baseline.totalCostUsd,
+    },
+    agent: {
+      correctnessPct: agg.agent.correctnessPct,
+      groundednessPct: agg.agent.groundednessPct,
+      totalCostUsd: agg.agent.totalCostUsd,
+    },
+  };
+  await appendIndexEntry(indexPath, indexEntry);
+
   // Print markdown table to stdout
   const table = renderMarkdownTable(agg);
   console.log(table);
   console.error(`\n[eval] results: ${resultsFile}`);
-  console.error(`[eval] cases=${cases.length} errors=${errorCount}`);
+  console.error(`[eval] index:   ${indexPath}`);
+  console.error(`[eval] runId=${runId} cases=${cases.length} errors=${errorCount}`);
 }
 
 main().catch((err: unknown) => {
