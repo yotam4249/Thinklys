@@ -129,6 +129,22 @@ What's deliberately not adversarial-aware yet: groundedness on adversarial cases
 
 **This PR's job in the bigger plan.** This is the measurement seam for feature 2 (planner-executor). Landing it alone lets `npm run eval eval/dataset.multihop.example.jsonl` produce a single-agent multi-hop number that the planner-executor PRs must beat — quoted in the planner-executor PR body as the bar. Without the slice, "beats the single-agent on multi-hop" has no operational definition.
 
+## 13. Planner-executor: small typed plan, focused executors, single synthesizer
+
+<!-- TODO(me): rewrite this entry in my own words before I consider this PR done -->
+
+**Decision.** `src/planner-executor/` is a three-stage pipeline reusing the existing single-agent loop as the executor inner-loop. The planner is one Claude call that returns a zod-validated `Plan` of ≤5 subtasks; each `Subtask` carries an `allowedTools` whitelist and a `dependsOn` list (max depth 2). The orchestrator runs subtasks level-by-level with `Promise.all` at each level, threading prior findings into dependent subtasks. The synthesizer is one final Claude call that composes a grounded answer from all executor outputs. The result conforms to `AgentRunResult` plus `plan` and `executorResults` extras, so PR 3 can wire it into the eval as a third system without special-casing the aggregator.
+
+**Alternative we rejected.** Several:
+
+1. **No planner — let one agent pick subtasks dynamically as it runs.** That's what the existing single-agent loop already does. Promoting "plan first, then execute" to a separate stage is the entire point — the planner can be cheaper/dumber than the executor and can be cached/inspected/replayed independently. It also makes the tool-restriction enforceable: an executor can only call tools the planner explicitly authorized, which is a small but real injection-resistance gain.
+2. **Per-executor MCP subprocess for true isolation.** Tempting because each executor is conceptually its own agent, but MCP over stdio is already a per-call validation boundary — spawning N subprocesses to run N subtasks gives essentially no extra isolation and balloons the latency/cost. Sharing one MCP subprocess across executors is correct; the orchestrator owns the lifecycle.
+3. **Free-form planner output ("just write a plan in markdown").** Rejected for the same reason `kind` is `z.enum` and not a tag: a malformed plan must fail at parse time, not silently downgrade. Hard limits — `MAX_SUBTASKS=5`, `MAX_DEPTH=2`, `allowedTools` must reference real tool names, `dependsOn` must reference earlier ids — are enforced in `validatePlan` and produce a typed error the orchestrator can surface.
+
+**Trade-off I'm consciously making.** The planner+synthesizer add two extra Claude calls per question. On a one-hop question those calls are dead weight — the planner will dutifully emit a one-subtask plan that's just the original question, and the synthesizer will rephrase the executor's answer. The bet is that on the multi-hop slice the gain (focused tool subsets, explicit dependency chaining, parallel execution within a level) outweighs the overhead. If PR 3's measurement shows the bet doesn't pay off on multi-hop, the prompts are the first thing to tune — not the architecture.
+
+**What this PR explicitly does NOT do.** No eval integration. The existing single-agent loop, MCP server, tools, and CLI are untouched. New scripts (`pe`, `pe:mock`, `pe:demo`) live alongside the existing ones so a reader can A/B them by hand.
+
 ---
 
 ## What's not in here
