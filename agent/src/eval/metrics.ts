@@ -23,6 +23,7 @@ function aggregateOne(
   runs: ReadonlyArray<SystemRun>,
   judgements: ReadonlyArray<Judgement>,
   adversarialCaseIds: ReadonlySet<string>,
+  multihopCaseIds: ReadonlySet<string>,
 ): SystemAggregate {
   const filteredRuns = runs.filter((r) => r.system === system && !r.error);
   const filteredJudgements = judgements.filter((j) => j.system === system);
@@ -38,6 +39,12 @@ function aggregateOne(
   const adversarialCount = adversarialJudgements.length;
   const adversarialCorrect = adversarialJudgements.filter((j) => j.correct).length;
 
+  const multihopJudgements = filteredJudgements.filter((j) =>
+    multihopCaseIds.has(j.caseId),
+  );
+  const multihopCount = multihopJudgements.length;
+  const multihopCorrect = multihopJudgements.filter((j) => j.correct).length;
+
   const base: SystemAggregate = {
     correctnessPct: pct(correctCount, filteredJudgements.length),
     groundednessPct: pct(groundedCount, filteredJudgements.length),
@@ -52,6 +59,10 @@ function aggregateOne(
     base.adversarialPct = pct(adversarialCorrect, adversarialCount);
     base.adversarialCount = adversarialCount;
   }
+  if (multihopCount > 0) {
+    base.multihopPct = pct(multihopCorrect, multihopCount);
+    base.multihopCount = multihopCount;
+  }
   return base;
 }
 
@@ -63,15 +74,24 @@ function buildAdversarialIdSet(cases: ReadonlyArray<EvalCase>): Set<string> {
   return out;
 }
 
+function buildMultihopIdSet(cases: ReadonlyArray<EvalCase>): Set<string> {
+  const out = new Set<string>();
+  for (const c of cases) {
+    if (c.tags && c.tags.includes("multihop")) out.add(c.id);
+  }
+  return out;
+}
+
 export function aggregate(
   runs: ReadonlyArray<SystemRun>,
   judgements: ReadonlyArray<Judgement>,
   cases: ReadonlyArray<EvalCase>,
 ): { baseline: SystemAggregate; agent: SystemAggregate } {
   const adversarialIds = buildAdversarialIdSet(cases);
+  const multihopIds = buildMultihopIdSet(cases);
   return {
-    baseline: aggregateOne("baseline", runs, judgements, adversarialIds),
-    agent: aggregateOne("agent", runs, judgements, adversarialIds),
+    baseline: aggregateOne("baseline", runs, judgements, adversarialIds, multihopIds),
+    agent: aggregateOne("agent", runs, judgements, adversarialIds, multihopIds),
   };
 }
 
@@ -94,6 +114,13 @@ function fmtAdv(agg: SystemAggregate): string {
   return `${agg.adversarialPct.toFixed(1)}% (n=${agg.adversarialCount})`;
 }
 
+function fmtMultihop(agg: SystemAggregate): string {
+  if (agg.multihopPct === undefined || agg.multihopCount === undefined) {
+    return "n/a (no cases)";
+  }
+  return `${agg.multihopPct.toFixed(1)}% (n=${agg.multihopCount})`;
+}
+
 export function renderMarkdownTable(agg: {
   baseline: SystemAggregate;
   agent: SystemAggregate;
@@ -104,6 +131,7 @@ export function renderMarkdownTable(agg: {
     ["Correctness", fmtPct(b.correctnessPct), fmtPct(a.correctnessPct)],
     ["Groundedness", fmtPct(b.groundednessPct), fmtPct(a.groundednessPct)],
     ["Adversarial pass-rate", fmtAdv(b), fmtAdv(a)],
+    ["Multi-hop pass-rate", fmtMultihop(b), fmtMultihop(a)],
     [
       "Mean tool calls / Q",
       fmtNum(b.meanToolCalls, 2),

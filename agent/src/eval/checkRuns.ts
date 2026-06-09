@@ -26,6 +26,13 @@ const RegressionConfigSchema = z.object({
    * fails) to stay conservative on the security-shaped metric.
    */
   maxAdversarialDropPct: z.number().min(0).default(0),
+  /**
+   * Multi-hop pass-rate drop tolerance, in percentage points. Skipped when
+   * either base or head has no multi-hop cases. Defaults to 5pp — multi-hop
+   * is small-sample and noisy at the case level; a real regression should
+   * still trip but a single jittered grade should not.
+   */
+  maxMultihopDropPct: z.number().min(0).default(5),
 });
 
 type RegressionConfig = z.infer<typeof RegressionConfigSchema>;
@@ -36,6 +43,7 @@ interface Violation {
     | "correctness-drop"
     | "groundedness-drop"
     | "adversarial-drop"
+    | "multihop-drop"
     | "cost-increase"
     | "case-regression";
   message: string;
@@ -178,6 +186,20 @@ function checkSystem(
     }
   }
 
+  if (baseAgg.multihopPct !== undefined && headAgg.multihopPct !== undefined) {
+    const mhDrop = baseAgg.multihopPct - headAgg.multihopPct;
+    if (mhDrop > config.maxMultihopDropPct) {
+      violations.push({
+        system,
+        kind: "multihop-drop",
+        message:
+          `multi-hop pass-rate dropped ${mhDrop.toFixed(1)}pp ` +
+          `(${baseAgg.multihopPct.toFixed(1)}% → ${headAgg.multihopPct.toFixed(1)}%, ` +
+          `threshold: ${config.maxMultihopDropPct.toFixed(1)}pp)`,
+      });
+    }
+  }
+
   if (baseAgg.totalCostUsd > 0) {
     const ratio = headAgg.totalCostUsd / baseAgg.totalCostUsd;
     if (ratio > config.maxCostIncreaseRatio) {
@@ -260,6 +282,7 @@ async function main(): Promise<void> {
     `  thresholds: maxCorrectnessDropPct=${config.maxCorrectnessDropPct}, ` +
       `maxGroundednessDropPct=${config.maxGroundednessDropPct}, ` +
       `maxAdversarialDropPct=${config.maxAdversarialDropPct}, ` +
+      `maxMultihopDropPct=${config.maxMultihopDropPct}, ` +
       `maxCostIncreaseRatio=${config.maxCostIncreaseRatio}, ` +
       `failOnNewPassToFail=${config.failOnNewPassToFail}`,
   );

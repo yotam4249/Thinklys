@@ -89,6 +89,13 @@ export interface SystemAggregate {
    */
   adversarialPct?: number;
   adversarialCount?: number;
+  /**
+   * Pass-rate (0..100) over cases tagged "multihop". A "property" tag,
+   * not a typed kind — multi-hop changes how hard the question is, not
+   * how the judge grades. Same undefined-vs-0 semantics as adversarial.
+   */
+  multihopPct?: number;
+  multihopCount?: number;
 }
 
 export interface EvalRunResult {
@@ -134,4 +141,6 @@ export interface RunIndexSystemSummary {
   totalCostUsd: number;
   /** Optional: present when the run had adversarial cases. */
   adversarialPct?: number | undefined;
+  /** Optional: present when the run had cases tagged "multihop". */
+  multihopPct?: number | undefined;
 }

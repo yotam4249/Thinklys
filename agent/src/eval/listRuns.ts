@@ -78,6 +78,18 @@ async function main(): Promise<void> {
       get: (e) =>
         e.agent.adversarialPct !== undefined ? fmtPct(e.agent.adversarialPct) : "-",
     },
+    {
+      title: "base mh",
+      width: 7,
+      get: (e) =>
+        e.baseline.multihopPct !== undefined ? fmtPct(e.baseline.multihopPct) : "-",
+    },
+    {
+      title: "agent mh",
+      width: 8,
+      get: (e) =>
+        e.agent.multihopPct !== undefined ? fmtPct(e.agent.multihopPct) : "-",
+    },
   ];
 
   const header = "| " + cols.map((c) => c.title.padEnd(c.width)).join(" | ") + " |";

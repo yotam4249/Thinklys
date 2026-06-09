@@ -115,6 +115,20 @@ Adversarial pass-rate is reported as `undefined` (rendered as `n/a (no cases)`) 
 
 What's deliberately not adversarial-aware yet: groundedness on adversarial cases is judged with the same standard groundedness prompt as normal cases. For `no-answer` and `prompt-injection`, the "context" is meaningful but the standard prompt may grade these unfairly (the system might "ground" a refusal in no context at all). The shipped judge prompt for groundedness already says "if the answer truthfully says it does not know because the context is insufficient, that counts as grounded" — flag for me: re-read that wording before defending this PR; I think it covers no-answer well but is fuzzier on prompt-injection refusals.
 
+## 12. Multi-hop is a property tag, not a typed `kind`
+
+<!-- TODO(me): rewrite this entry in my own words before I consider this PR done -->
+
+**Decision.** Multi-hop cases are flagged by including `"multihop"` in `tags`. The judge does **not** branch on this — multi-hop questions have a real factual `expected` answer and are graded by the standard correctness prompt. A new `multihopPct` aggregate slice mirrors the adversarial one: optional on `SystemAggregate` and `RunIndexEntry`, undefined when the dataset has zero multi-hop cases. `eval:check` gains a `maxMultihopDropPct` threshold defaulting to **5pp** (vs. 0pp for adversarial).
+
+**Alternative we rejected.** Adding `"multihop"` as a fourth `kind`. Tempting because the adversarial pattern was right there, but a `kind` is a *judging discriminator* — it changes what "correct" means. Multi-hop doesn't change what "correct" means; it changes how hard the question is. Conflating the two would force the judge dispatch to grow a no-op branch for multi-hop, and would prevent a case from being both adversarial AND multi-hop (which is plausible: imagine an ambiguous question that also requires cross-document retrieval).
+
+`tags` is the right home: free-form, list-valued, and already used for grep-bait. The slice-by-tag pattern in `buildMultihopIdSet` is the same shape the team would use for any future "harder-than-normal" subset, without each one needing a schema change.
+
+**Why 5pp default instead of 0pp.** Adversarial cases are binary by design — they either refused the injection or did not. Multi-hop cases are graded by the LLM judge against `expected`, and on a small dataset (~6 cases) a single jittered judge call moves the pass-rate by 16.7pp. A 0pp gate would false-positive constantly; 5pp catches a real regression (lose one case definitively) while staying robust to one or two cases being scored differently across runs.
+
+**This PR's job in the bigger plan.** This is the measurement seam for feature 2 (planner-executor). Landing it alone lets `npm run eval eval/dataset.multihop.example.jsonl` produce a single-agent multi-hop number that the planner-executor PRs must beat — quoted in the planner-executor PR body as the bar. Without the slice, "beats the single-agent on multi-hop" has no operational definition.
+
 ---
 
 ## What's not in here

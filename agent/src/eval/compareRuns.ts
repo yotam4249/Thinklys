@@ -125,6 +125,11 @@ function renderAggregateTable(
       fmtOptionalDeltaPct(base.agent.adversarialPct, head.agent.adversarialPct),
     ],
     [
+      "Multi-hop pass-rate",
+      fmtOptionalDeltaPct(base.baseline.multihopPct, head.baseline.multihopPct),
+      fmtOptionalDeltaPct(base.agent.multihopPct, head.agent.multihopPct),
+    ],
+    [
       "Mean tool calls / Q",
       fmtDeltaNum(base.baseline.meanToolCalls, head.baseline.meanToolCalls, 2),
       fmtDeltaNum(base.agent.meanToolCalls, head.agent.meanToolCalls, 2),
